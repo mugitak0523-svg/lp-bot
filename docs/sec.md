@@ -201,6 +201,11 @@ root/
 * 環境変数はRailwayのダッシュボードで設定。
 * 永続化が必要なデータ（開始時の元本データなど）は、RailwayのVolumeか、**SQLite**（推奨）/簡易なJSON DB（lowdb等）/Redisを使用する（再起動で消えないようにするため）。ポジション情報はSQLiteに保存して管理し、**リバランスのたびに新しいレコードとして保存**する（履歴を残す）。
 
+**SQLite 仕様（ポジション履歴）**
+* テーブル: `positions`
+* 保存項目（必須）: token_id, pool_address, token0/1(アドレス・symbol・decimals), fee, tick_lower/upper, liquidity, amount0/1, price0_in_1, net_value_in_1, mint_tx_hash, status, created_at, updated_at
+* 保存項目（任意）: fees0/fees1, gas_cost_native/gas_cost_in_1, rebalance_reason, close_tx_hash
+
 
 3. **Deployment (Frontend):**
 * Next.js等で作成し **Vercel** にデプロイ。

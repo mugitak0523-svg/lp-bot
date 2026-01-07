@@ -2,10 +2,13 @@ import express from 'express';
 import path from 'path';
 
 import { getConfig, getSnapshot, updateConfig } from '../state/store';
+import { getLatestActivePosition, getLatestPosition, listPositions } from '../db/positions';
+import { getDb } from '../db/sqlite';
 
 export type ApiActions = {
   rebalance?: () => Promise<void>;
   close?: () => Promise<void>;
+  mint?: () => Promise<void>;
   panic?: () => Promise<void>;
 };
 
@@ -13,6 +16,7 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
   const app = express();
   app.use(express.json());
   app.use(express.static(path.resolve(process.cwd(), 'web')));
+  const db = getDb();
 
   app.get('/status', (_req, res) => {
     const snapshot = getSnapshot();
@@ -39,6 +43,30 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     res.json(next);
   });
 
+  app.get('/positions', async (req, res) => {
+    const limit = Number(req.query.limit ?? '50');
+    const rows = await listPositions(db, Number.isFinite(limit) ? limit : 50);
+    res.json(rows);
+  });
+
+  app.get('/positions/latest', async (_req, res) => {
+    const row = await getLatestPosition(db);
+    if (!row) {
+      res.json({ status: 'no-data' });
+      return;
+    }
+    res.json(row);
+  });
+
+  app.get('/positions/active', async (_req, res) => {
+    const row = await getLatestActivePosition(db);
+    if (!row) {
+      res.json({ status: 'no-data' });
+      return;
+    }
+    res.json(row);
+  });
+
   app.post('/action/rebalance', (_req, res) => {
     if (!actions.rebalance) {
       res.status(501).json({ error: 'rebalance not configured' });
@@ -55,6 +83,21 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     }
     void actions.close();
     res.json({ status: 'accepted' });
+  });
+
+  app.post('/action/mint', async (_req, res) => {
+    if (!actions.mint) {
+      res.status(501).json({ error: 'mint not configured' });
+      return;
+    }
+    try {
+      await actions.mint();
+      res.json({ status: 'ok' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const status = message.includes('active position') ? 409 : 500;
+      res.status(status).json({ error: message });
+    }
   });
 
   app.post('/action/panic', (_req, res) => {

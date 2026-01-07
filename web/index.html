@@ -42,6 +42,23 @@
           </div>
         </article>
 
+        <article class="card" id="card-active">
+          <h2>Active Position</h2>
+          <div class="metric">
+            <span class="label">Token ID</span>
+            <span class="value" id="active-token">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">Range</span>
+            <span class="value" id="active-range">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">Value</span>
+            <span class="value" id="active-value">-</span>
+          </div>
+          <p class="hint" id="active-status">no-data</p>
+        </article>
+
         <article class="card" id="card-value">
           <h2>Net Value</h2>
           <div class="metric large">
@@ -89,6 +106,7 @@
           <h2>Actions</h2>
           <div class="actions">
             <button class="btn ghost" id="btn-rebalance">Manual Rebalance</button>
+            <button class="btn ghost" id="btn-mint">Create Position</button>
             <button class="btn ghost" id="btn-close">Close Position</button>
             <button class="btn danger" id="btn-panic">Panic Close</button>
           </div>

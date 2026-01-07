@@ -2,11 +2,16 @@ const statusChip = document.getElementById('status-chip');
 const priceEl = document.getElementById('price');
 const rangeEl = document.getElementById('range');
 const assetEl = document.getElementById('asset');
+const activeTokenEl = document.getElementById('active-token');
+const activeRangeEl = document.getElementById('active-range');
+const activeValueEl = document.getElementById('active-value');
+const activeStatusEl = document.getElementById('active-status');
 const netValueEl = document.getElementById('net-value');
 const pnlEl = document.getElementById('pnl');
 const feesEl = document.getElementById('fees');
 const configForm = document.getElementById('config-form');
 const rebalanceBtn = document.getElementById('btn-rebalance');
+const mintBtn = document.getElementById('btn-mint');
 const closeBtn = document.getElementById('btn-close');
 const panicBtn = document.getElementById('btn-panic');
 
@@ -49,6 +54,23 @@ async function loadConfig() {
   });
 }
 
+async function loadActivePosition() {
+  const data = await fetchJson('/positions/active');
+  if (data.status === 'no-data') {
+    activeTokenEl.textContent = '-';
+    activeRangeEl.textContent = '-';
+    activeValueEl.textContent = '-';
+    activeStatusEl.textContent = 'no active position';
+    mintBtn.disabled = false;
+    return;
+  }
+  activeTokenEl.textContent = data.tokenId;
+  activeRangeEl.textContent = `tick ${data.tickLower} ~ ${data.tickUpper}`;
+  activeValueEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.token1Symbol}`;
+  activeStatusEl.textContent = `status: ${data.status}`;
+  mintBtn.disabled = data.status === 'active';
+}
+
 configForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const payload = {};
@@ -70,6 +92,11 @@ rebalanceBtn.addEventListener('click', async () => {
   await fetchJson('/action/rebalance', { method: 'POST' });
 });
 
+mintBtn.addEventListener('click', async () => {
+  if (!confirm('新規ポジションを作成しますか？（Activeがある場合は失敗します）')) return;
+  await fetchJson('/action/mint', { method: 'POST' });
+});
+
 closeBtn.addEventListener('click', async () => {
   if (!confirm('リバランスせずにポジションをクローズしますか？')) return;
   await fetchJson('/action/close', { method: 'POST' });
@@ -82,12 +109,13 @@ panicBtn.addEventListener('click', async () => {
 
 async function boot() {
   try {
-    await Promise.all([loadConfig(), loadStatus()]);
+    await Promise.all([loadConfig(), loadStatus(), loadActivePosition()]);
   } catch (error) {
     console.error(error);
   }
   setInterval(() => {
     loadStatus().catch((error) => console.error(error));
+    loadActivePosition().catch((error) => console.error(error));
   }, 4000);
 }
 

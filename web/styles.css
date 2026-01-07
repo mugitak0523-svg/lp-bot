@@ -190,6 +190,13 @@ input {
   color: #fff2e9;
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  box-shadow: none;
+  transform: none;
+}
+
 .hint {
   margin-top: 12px;
   color: var(--muted);
