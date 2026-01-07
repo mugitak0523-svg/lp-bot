@@ -5,7 +5,8 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "monitor": "ts-node src/bot/monitor.ts"
+    "monitor": "ts-node src/bot/monitor.ts",
+    "rebalance": "ts-node src/bot/rebalance.ts"
   },
   "dependencies": {
     "@uniswap/sdk-core": "^3.1.0",

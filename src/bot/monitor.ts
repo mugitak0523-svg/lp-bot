@@ -6,7 +6,7 @@ import PoolABI from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/Unis
 import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/interfaces/IERC20Metadata.sol/IERC20Metadata.json';
 
 import { loadSettings } from '../config/settings';
-import { createHybridProvider } from '../utils/provider';
+import { createHttpProvider, createWsProvider } from '../utils/provider';
 import { formatPercent, logHeader } from '../utils/logger';
 
 const NFPM_ADDRESS = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
@@ -25,13 +25,10 @@ function formatSigned(value: number, decimals = 2): string {
 
 async function main(): Promise<void> {
   const settings = loadSettings();
-  const providers = createHybridProvider(settings.rpcUrl, settings.rpcWss);
+  const httpProvider = createHttpProvider(settings.rpcUrl);
 
-  const nfpm = new ethers.Contract(NFPM_ADDRESS, NFPM_ABI.abi, providers.http);
-  const poolContract = new ethers.Contract(settings.poolAddress, PoolABI.abi, providers.http);
-
-  const nfpmWs = new ethers.Contract(NFPM_ADDRESS, NFPM_ABI.abi, providers.ws);
-  const poolWs = new ethers.Contract(settings.poolAddress, PoolABI.abi, providers.ws);
+  const nfpm = new ethers.Contract(NFPM_ADDRESS, NFPM_ABI.abi, httpProvider);
+  const poolContract = new ethers.Contract(settings.poolAddress, PoolABI.abi, httpProvider);
 
   const tokenIdBN = ethers.BigNumber.from(settings.tokenId);
   const ownerAddress = await nfpm.ownerOf(tokenIdBN);
@@ -42,8 +39,8 @@ async function main(): Promise<void> {
     poolContract.fee(),
   ]);
 
-  const token0Contract = new ethers.Contract(token0Addr, IERC20_METADATA_ABI.abi, providers.http);
-  const token1Contract = new ethers.Contract(token1Addr, IERC20_METADATA_ABI.abi, providers.http);
+  const token0Contract = new ethers.Contract(token0Addr, IERC20_METADATA_ABI.abi, httpProvider);
+  const token1Contract = new ethers.Contract(token1Addr, IERC20_METADATA_ABI.abi, httpProvider);
 
   const [dec0, dec1, sym0, sym1] = await Promise.all([
     token0Contract.decimals(),
@@ -157,23 +154,49 @@ async function main(): Promise<void> {
 
   await reportState('Init');
 
-  poolWs.on(poolWs.filters.Swap(), async () => {
-    const now = Date.now();
-    if (now - state.lastUpdateTime > settings.updateIntervalMs && !state.isUpdating) {
-      await reportState('Swap');
-    }
-  });
-
   const topic = ethers.utils.hexZeroPad(tokenIdBN.toHexString(), 32);
-  nfpmWs.on(nfpmWs.filters.IncreaseLiquidity(topic), () => reportState('Liq+'));
-  nfpmWs.on(nfpmWs.filters.DecreaseLiquidity(topic), () => reportState('Liq-'));
-  nfpmWs.on(nfpmWs.filters.Collect(topic), () => reportState('Collect'));
+  let wsProvider = createWsProvider(settings.rpcWss);
+  let nfpmWs: ethers.Contract | null = null;
+  let poolWs: ethers.Contract | null = null;
 
-  (providers.ws as { _websocket?: { on?: (event: string, handler: () => void) => void } })
-    ._websocket?.on?.('close', () => {
-    console.error('WS Closed. Exiting...');
-    process.exit(1);
-  });
+  const cleanupWs = (): void => {
+    if (poolWs) poolWs.removeAllListeners();
+    if (nfpmWs) nfpmWs.removeAllListeners();
+    poolWs = null;
+    nfpmWs = null;
+  };
+
+  const handleWsDisconnect = (): void => {
+    console.error('WS Closed. Reconnecting...');
+    cleanupWs();
+    wsProvider.destroy();
+    setTimeout(() => {
+      wsProvider = createWsProvider(settings.rpcWss);
+      attachWsListeners(wsProvider);
+    }, 1000);
+  };
+
+  const attachWsListeners = (provider: ethers.providers.WebSocketProvider): void => {
+    nfpmWs = new ethers.Contract(NFPM_ADDRESS, NFPM_ABI.abi, provider);
+    poolWs = new ethers.Contract(settings.poolAddress, PoolABI.abi, provider);
+
+    poolWs.on(poolWs.filters.Swap(), async () => {
+      const now = Date.now();
+      if (now - state.lastUpdateTime > settings.updateIntervalMs && !state.isUpdating) {
+        await reportState('Swap');
+      }
+    });
+
+    nfpmWs.on(nfpmWs.filters.IncreaseLiquidity(topic), () => reportState('Liq+'));
+    nfpmWs.on(nfpmWs.filters.DecreaseLiquidity(topic), () => reportState('Liq-'));
+    nfpmWs.on(nfpmWs.filters.Collect(topic), () => reportState('Collect'));
+
+    const socket = (provider as { _websocket?: { on?: (event: string, handler: () => void) => void } })._websocket;
+    socket?.on?.('close', handleWsDisconnect);
+    socket?.on?.('error', handleWsDisconnect);
+  };
+
+  attachWsListeners(wsProvider);
 }
 
 main().catch((error) => {
