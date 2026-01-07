@@ -199,7 +199,7 @@ root/
 2. **Deployment (Backend):**
 * GitHub経由で **Railway** にデプロイ。
 * 環境変数はRailwayのダッシュボードで設定。
-* 永続化が必要なデータ（開始時の元本データなど）は、RailwayのVolumeか、簡易なJSON DB（lowdb等）またはRedisを使用する（再起動で消えないようにするため）。
+* 永続化が必要なデータ（開始時の元本データなど）は、RailwayのVolumeか、**SQLite**（推奨）/簡易なJSON DB（lowdb等）/Redisを使用する（再起動で消えないようにするため）。ポジション情報はSQLiteに保存して管理し、**リバランスのたびに新しいレコードとして保存**する（履歴を残す）。
 
 
 3. **Deployment (Frontend):**

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LP Bot Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-1"></div>
+    <div class="bg-orb orb-2"></div>
+    <main class="app">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Arbitrum / Uniswap V3</p>
+          <h1>LP Bot Dashboard</h1>
+          <p class="subtitle">監視・設定・手動アクションを一つの画面で。</p>
+        </div>
+        <div class="status-chip" id="status-chip">no-data</div>
+      </header>
+
+      <section class="grid">
+        <article class="card" id="card-overview">
+          <h2>Overview</h2>
+          <div class="metric">
+            <span class="label">Price</span>
+            <span class="value" id="price">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">Range</span>
+            <span class="value" id="range">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">Asset</span>
+            <span class="value" id="asset">-</span>
+          </div>
+        </article>
+
+        <article class="card" id="card-value">
+          <h2>Net Value</h2>
+          <div class="metric large">
+            <span class="label">Total</span>
+            <span class="value" id="net-value">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">PnL</span>
+            <span class="value" id="pnl">-</span>
+          </div>
+          <div class="metric">
+            <span class="label">Fees</span>
+            <span class="value" id="fees">-</span>
+          </div>
+        </article>
+
+        <article class="card" id="card-config">
+          <h2>Config</h2>
+          <form id="config-form">
+            <label>
+              Tick Range
+              <input type="number" name="tickRange" step="1" />
+            </label>
+            <label>
+              Delay (sec)
+              <input type="number" name="rebalanceDelaySec" step="1" />
+            </label>
+            <label>
+              Slippage (bps)
+              <input type="number" name="slippageBps" step="1" />
+            </label>
+            <label>
+              Stop Loss (%)
+              <input type="number" name="stopLossPercent" step="0.1" />
+            </label>
+            <label>
+              Max Gas (gwei)
+              <input type="number" name="maxGasPriceGwei" step="1" />
+            </label>
+            <button type="submit" class="btn primary">Save</button>
+          </form>
+        </article>
+
+        <article class="card" id="card-actions">
+          <h2>Actions</h2>
+          <div class="actions">
+            <button class="btn ghost" id="btn-rebalance">Manual Rebalance</button>
+            <button class="btn ghost" id="btn-close">Close Position</button>
+            <button class="btn danger" id="btn-panic">Panic Close</button>
+          </div>
+          <p class="hint">実行中は自動リバランスと競合しないよう制御されます。</p>
+        </article>
+      </section>
+    </main>
+    <script src="./app.js"></script>
+  </body>
+</html>

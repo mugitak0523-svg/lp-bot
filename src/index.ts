@@ -86,7 +86,57 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   }
 }
 
-startApiServer(port);
+startApiServer(port, {
+  rebalance: async () => {
+    if (state.rebalancing) {
+      throw new Error('Rebalance already running');
+    }
+    state.rebalancing = true;
+    sendDiscordMessage(webhookUrl, 'Manual rebalance start.');
+    try {
+      await runRebalance({
+        tickRange: getConfig().tickRange,
+        slippageToleranceBps: getConfig().slippageBps,
+      });
+      sendDiscordMessage(webhookUrl, 'Manual rebalance done.');
+    } catch (error) {
+      console.error('Manual rebalance error:', error);
+      sendDiscordMessage(webhookUrl, `Manual rebalance error: ${error}`);
+      throw error;
+    } finally {
+      state.rebalancing = false;
+      state.outOfRangeSince = 0;
+    }
+  },
+  close: async () => {
+    if (state.rebalancing) {
+      throw new Error('Rebalance already running');
+    }
+    state.rebalancing = true;
+    sendDiscordMessage(webhookUrl, 'Manual close start.');
+    try {
+      await closePosition({ removePercent: 100 });
+      sendDiscordMessage(webhookUrl, 'Manual close done.');
+    } catch (error) {
+      console.error('Manual close error:', error);
+      sendDiscordMessage(webhookUrl, `Manual close error: ${error}`);
+      throw error;
+    } finally {
+      state.rebalancing = false;
+      state.outOfRangeSince = 0;
+    }
+  },
+  panic: async () => {
+    if (state.rebalancing) {
+      throw new Error('Rebalance already running');
+    }
+    state.rebalancing = true;
+    sendDiscordMessage(webhookUrl, 'Panic close start.');
+    await closePosition({ removePercent: 100 });
+    sendDiscordMessage(webhookUrl, 'Panic close done. Exiting.');
+    process.exit(1);
+  },
+});
 startMonitor({
   onSnapshot: (snapshot) => {
     void handleSnapshot(snapshot);
