@@ -2,7 +2,7 @@ import { BigNumber, ethers } from 'ethers';
 import { CurrencyAmount } from '@uniswap/sdk-core';
 import { nearestUsableTick, Position } from '@uniswap/v3-sdk';
 
-import { loadWriteSettings } from '../config/settings';
+import { loadWriteSettings, WriteSettings } from '../config/settings';
 import { createHybridProvider } from '../utils/provider';
 import { ensureAllowance, getErc20 } from '../uniswap/erc20';
 import { loadPoolContext } from '../uniswap/pool';
@@ -23,8 +23,35 @@ function applySlippage(value: number, slippageBps: number): number {
   return value * ratio;
 }
 
-async function main(): Promise<void> {
-  const settings = loadWriteSettings();
+export async function closePosition(overrides: Partial<WriteSettings> = {}): Promise<void> {
+  const settings = { ...loadWriteSettings(), ...overrides };
+  const providers = createHybridProvider(settings.rpcUrl, settings.rpcWss);
+  const signer = new ethers.Wallet(settings.privateKey, providers.http);
+  const owner = await signer.getAddress();
+
+  const nfpm = getPositionManager(signer);
+  const positionData = await nfpm.positions(settings.tokenId);
+  const liquidity: BigNumber = positionData.liquidity;
+  const deadline = Math.floor(Date.now() / 1000) + settings.rebalanceDeadlineSec;
+
+  console.log(`\n=== Close Position ===`);
+  console.log(`Owner: ${owner}`);
+
+  if (liquidity.gt(0)) {
+    const removeLiquidity = liquidity.mul(settings.removePercent).div(100);
+    console.log(`1) Decrease Liquidity: ${settings.removePercent}%`);
+    await decreaseLiquidity(nfpm, settings.tokenId, removeLiquidity, deadline);
+  } else {
+    console.log('1) Liquidity already zero. Skip decrease.');
+  }
+
+  console.log('2) Collect fees and principal');
+  await collectAll(nfpm, settings.tokenId, owner);
+  console.log('=== Close Done ===');
+}
+
+export async function runRebalance(overrides: Partial<WriteSettings> = {}): Promise<void> {
+  const settings = { ...loadWriteSettings(), ...overrides };
   const providers = createHybridProvider(settings.rpcUrl, settings.rpcWss);
   const signer = new ethers.Wallet(settings.privateKey, providers.http);
   const owner = await signer.getAddress();
@@ -203,7 +230,13 @@ async function main(): Promise<void> {
   console.log('\n=== Rebalance Done ===');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+async function main(): Promise<void> {
+  await runRebalance();
+}
+
+if (require.main === module) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
