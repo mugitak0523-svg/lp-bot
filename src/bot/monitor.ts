@@ -8,6 +8,7 @@ import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/inter
 import { loadSettings } from '../config/settings';
 import { createHttpProvider, createWsProvider } from '../utils/provider';
 import { formatPercent, logHeader } from '../utils/logger';
+import { MonitorSnapshot } from '../state/store';
 
 const NFPM_ADDRESS = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
 const MAX_UINT128 = ethers.BigNumber.from('0xffffffffffffffffffffffffffffffff');
@@ -23,7 +24,11 @@ function formatSigned(value: number, decimals = 2): string {
   return `${sign}${value.toFixed(decimals)}`;
 }
 
-async function main(): Promise<void> {
+export type MonitorCallbacks = {
+  onSnapshot?: (snapshot: MonitorSnapshot) => void;
+};
+
+export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<void> {
   const settings = loadSettings();
   const httpProvider = createHttpProvider(settings.rpcUrl);
 
@@ -104,6 +109,10 @@ async function main(): Promise<void> {
       const pnlPct = state.initialNetValue ? (pnl / state.initialNetValue) * 100 : 0;
 
       let feesText = '(fetching)';
+      let fee0 = 0;
+      let fee1 = 0;
+      let feeTotalIn1 = 0;
+      let feeYield = 0;
       try {
         const feeResult = await nfpm.callStatic.collect(
           {
@@ -115,12 +124,12 @@ async function main(): Promise<void> {
           { from: ownerAddress }
         );
 
-        const f0 = parseFloat(ethers.utils.formatUnits(feeResult.amount0, dec0));
-        const f1 = parseFloat(ethers.utils.formatUnits(feeResult.amount1, dec1));
-        const feeTotalIn1 = f0 * price0In1 + f1;
-        const feeYield = netValueIn1 > 0 ? (feeTotalIn1 / netValueIn1) * 100 : 0;
+        fee0 = parseFloat(ethers.utils.formatUnits(feeResult.amount0, dec0));
+        fee1 = parseFloat(ethers.utils.formatUnits(feeResult.amount1, dec1));
+        feeTotalIn1 = fee0 * price0In1 + fee1;
+        feeYield = netValueIn1 > 0 ? (feeTotalIn1 / netValueIn1) * 100 : 0;
 
-        feesText = `+${f0.toFixed(6)} ${sym0} / +${f1.toFixed(6)} ${sym1} (Total: ${feeTotalIn1.toFixed(4)} ${sym1}, Yield: ${formatPercent(feeYield)})`;
+        feesText = `+${fee0.toFixed(6)} ${sym0} / +${fee1.toFixed(6)} ${sym1} (Total: ${feeTotalIn1.toFixed(4)} ${sym1}, Yield: ${formatPercent(feeYield)})`;
       } catch (error) {
         feesText = '(calc failed)';
       }
@@ -144,6 +153,29 @@ async function main(): Promise<void> {
       console.log(`Value : ${amount0.toFixed(4)} ${sym0} + ${amount1.toFixed(4)} ${sym1}`);
       console.log(`Net   : ${netValueIn1.toFixed(4)} ${sym1} (PnL ${formatSigned(pnl)} ${sym1}, ${formatSigned(pnlPct, 2)}%)`);
       console.log(`Fees  : ${feesText}`);
+
+      callbacks.onSnapshot?.({
+        timestamp,
+        trigger,
+        status: statusHeader,
+        symbol0: sym0,
+        symbol1: sym1,
+        price0In1,
+        tickLower,
+        tickUpper,
+        currentTick,
+        ratio0,
+        ratio1,
+        amount0,
+        amount1,
+        netValueIn1,
+        pnl,
+        pnlPct,
+        fee0,
+        fee1,
+        feeTotalIn1,
+        feeYieldPct: feeYield,
+      });
     } catch (error) {
       console.error('Update Error:', error);
     } finally {
@@ -199,7 +231,9 @@ async function main(): Promise<void> {
   attachWsListeners(wsProvider);
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+if (require.main === module) {
+  startMonitor().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
