@@ -44,6 +44,7 @@ export function initDb(filePath: string): SqliteDb {
         rebalance_reason TEXT,
         mint_tx_hash TEXT,
         close_tx_hash TEXT,
+        close_reason TEXT,
         closed_net_value_in_1 REAL,
         realized_fees_in_1 REAL,
         realized_pnl_in_1 REAL,
@@ -65,6 +66,7 @@ export function initDb(filePath: string): SqliteDb {
           ensureColumn(db, 'positions', 'realized_fees_in_1', 'REAL'),
           ensureColumn(db, 'positions', 'realized_pnl_in_1', 'REAL'),
           ensureColumn(db, 'positions', 'closed_at', 'TEXT'),
+          ensureColumn(db, 'positions', 'close_reason', 'TEXT'),
         ])
           .then(() => resolve())
           .catch(reject);

@@ -26,9 +26,9 @@
       <aside class="sidebar">
         <div class="brand"></div>
         <nav class="nav">
-          <button class="nav-item active">Positions</button>
-          <button class="nav-item">History</button>
-          <button class="nav-item">Settings</button>
+          <button class="nav-item active" data-view="positions">Positions</button>
+          <button class="nav-item" data-view="history">History</button>
+          <button class="nav-item" data-view="settings">Settings</button>
         </nav>
         <div class="sidebar-footer">
           <p class="hint">Environment: Arbitrum</p>
@@ -37,7 +37,8 @@
 
       <main class="app">
 
-        <section class="grid-main">
+        <section class="view view-active" id="view-positions">
+          <section class="grid-main">
           <div class="grid-left">
             <div class="grid-top">
               <article class="stat-card" id="card-net">
@@ -63,8 +64,17 @@
               </article>
               <article class="stat-card" id="card-profit">
                 <p class="card-title">Profit</p>
-                <p class="stat-value" id="profit-total">-</p>
+                <p class="stat-value">
+                  <span class="stat-value inline" id="profit-total">-</span>
+                  <span class="stat-value inline profit-inline" id="profit-sub">-</span>
+                </p>
                 <p class="stat-sub" id="profit-detail">-</p>
+                <div class="ratio-bar" aria-hidden="true">
+                  <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl"></div>
+                  <div class="ratio-fill ratio-fees" id="profit-ratio-fees"></div>
+                  <div class="ratio-fill ratio-gas" id="profit-ratio-gas"></div>
+                </div>
+                <p class="ratio-text" id="profit-ratio-text">-</p>
               </article>
             </div>
             <div class="grid-bottom">
@@ -75,12 +85,20 @@
               <span class="value" id="active-token">-</span>
             </div>
             <div class="metric">
-              <span class="label">Range</span>
+              <span class="label">Size (created)</span>
+              <span class="value" id="active-size">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Range (tick)</span>
               <span class="value" id="active-range">-</span>
             </div>
             <div class="metric">
-              <span class="label">Size (created)</span>
-              <span class="value" id="active-size">-</span>
+              <span class="label">Range (price)</span>
+              <span class="value" id="active-range-price">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Range (stop)</span>
+              <span class="value" id="active-stop-loss">-</span>
             </div>
             <div class="metric">
               <span class="label">ETH Price (created)</span>
@@ -96,10 +114,13 @@
             </div>
           </article>
 
-              <article class="card" id="card-live">
-            <h2 class="card-title">Live Price</h2>
+          <article class="card" id="card-live">
+            <h2 class="card-title live-title">LIVE<span class="live-dot" aria-hidden="true"></span></h2>
             <p class="stat-value" id="price">-</p>
             <p class="stat-sub">Created Price <span id="created-price">-</span></p>
+            <p class="stat-sub"><span class="stat-value inline" id="hold-time">-</span></p>
+            <p class="stat-sub">Created at <span id="created-at">-</span></p>
+            <p class="stat-sub"><span class="stat-value inline" id="rebalance-eta">-</span></p>
           </article>
             </div>
           </div>
@@ -139,6 +160,39 @@
             </form>
             <p class="hint" id="create-hint"></p>
           </article>
+          </section>
+        </section>
+
+        <section class="view" id="view-history">
+          <div class="card history-card">
+            <h2 class="card-title">History</h2>
+            <p class="stat-sub" id="history-empty">No closed positions.</p>
+            <div class="table-wrap">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>Token ID</th>
+                    <th>Range</th>
+                    <th>Size (created)</th>
+                    <th>Closed Net</th>
+                    <th>Fees</th>
+                    <th>PnL</th>
+                    <th>Gas</th>
+                    <th>Profit</th>
+                    <th>Close Reason</th>
+                    <th>Closed At</th>
+                  </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings">
+          <div class="card">
+            <h2 class="card-title">Settings</h2>
+          </div>
         </section>
       </main>
     </div>

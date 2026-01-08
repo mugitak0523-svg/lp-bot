@@ -7,7 +7,7 @@ import { createHybridProvider } from '../utils/provider';
 import { ensureAllowance, getErc20 } from '../uniswap/erc20';
 import { loadPoolContext } from '../uniswap/pool';
 import { getPositionManager, buildMintCall, collectAll, decreaseLiquidity, parseEventAmounts } from '../uniswap/positions';
-import { getSwapRouter, swapExactOutputSingle } from '../uniswap/swap';
+import { getSwapRouter, swapExactInputSingle, swapExactOutputSingle } from '../uniswap/swap';
 import { NFPM_ADDRESS } from '../uniswap/addresses';
 
 function toFixedAmount(value: number, decimals: number): string {
@@ -219,9 +219,8 @@ export async function runRebalance(
   }
 
   let swapReceipt: ContractReceipt | null = null;
-  const deficit0 = Math.max(0, targetAmount0 - balance0);
-  const deficit1 = Math.max(0, targetAmount1 - balance1);
-  if (deficit0 > 0) {
+  if (balance0 < targetAmount0) {
+    const deficit0 = targetAmount0 - balance0;
     const amountOut = toBigNumber(deficit0, poolContext.token0.decimals);
     const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
       tokenIn: poolContext.token1.address,
@@ -249,32 +248,31 @@ export async function runRebalance(
       amountInMaximum,
       deadline,
     });
-  } else if (deficit1 > 0) {
-    const amountOut = toBigNumber(deficit1, poolContext.token1.decimals);
-    const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
+  } else if (balance0 > targetAmount0) {
+    const excess0 = balance0 - targetAmount0;
+    const amountIn = toBigNumber(excess0, poolContext.token0.decimals);
+    const quotedOut: BigNumber = await swapRouter.callStatic.exactInputSingle({
       tokenIn: poolContext.token0.address,
       tokenOut: poolContext.token1.address,
       fee: poolContext.fee,
       recipient: owner,
       deadline,
-      amountOut,
-      amountInMaximum: ethers.constants.MaxUint256,
+      amountIn,
+      amountOutMinimum: 0,
       sqrtPriceLimitX96: 0,
     });
-    const amountInMaximum = quotedIn.mul(10_000 + settings.slippageToleranceBps).div(10_000);
+    const amountOutMin = quotedOut.mul(10_000 - settings.slippageToleranceBps).div(10_000);
 
-    console.log(
-      `   - Swap for ${deficit1.toFixed(6)} ${poolContext.token1.symbol} using ${poolContext.token0.symbol}`
-    );
-    await ensureAllowance(token0Contract, owner, swapRouter.address, amountInMaximum);
-    swapReceipt = await swapExactOutputSingle({
+    console.log(`   - Swap ${excess0.toFixed(6)} ${poolContext.token0.symbol} -> ${poolContext.token1.symbol}`);
+    await ensureAllowance(token0Contract, owner, swapRouter.address, amountIn);
+    swapReceipt = await swapExactInputSingle({
       router: swapRouter,
       tokenIn: poolContext.token0.address,
       tokenOut: poolContext.token1.address,
       fee: poolContext.fee,
       recipient: owner,
-      amountOut,
-      amountInMaximum,
+      amountIn,
+      amountOutMinimum: amountOutMin,
       deadline,
     });
   } else {
@@ -295,13 +293,24 @@ export async function runRebalance(
   console.log(`   - Tick range ${lowerTick} ~ ${upperTick}`);
   const refreshedPrice0In1 = parseFloat(refreshedPool.pool.token0Price.toSignificant(8));
   const refreshedTotalValueIn1 = balance0 * refreshedPrice0In1 + balance1;
-  console.log(
-    `   - Size ${balance0.toFixed(6)} ${refreshedPool.token0.symbol} + ${balance1.toFixed(6)} ${refreshedPool.token1.symbol}`
-  );
-  console.log(`   - Total ${refreshedTotalValueIn1.toFixed(6)} ${refreshedPool.token1.symbol}`);
+  const mintTotalIn1 = settings.targetTotalToken1 > 0 ? settings.targetTotalToken1 : refreshedTotalValueIn1;
+  const mintValueIn1 = mintTotalIn1 / 2;
+  const mintTarget0 = mintValueIn1 / refreshedPrice0In1;
+  const mintTarget1 = mintValueIn1;
+  const mintAmount0Bn =
+    settings.targetTotalToken1 > 0 ? toBigNumber(mintTarget0, refreshedPool.token0.decimals) : balance0Bn;
+  const mintAmount1Bn =
+    settings.targetTotalToken1 > 0 ? toBigNumber(mintTarget1, refreshedPool.token1.decimals) : balance1Bn;
+  const cappedAmount0Bn = mintAmount0Bn.gt(balance0Bn) ? balance0Bn : mintAmount0Bn;
+  const cappedAmount1Bn = mintAmount1Bn.gt(balance1Bn) ? balance1Bn : mintAmount1Bn;
 
-  const amount0 = CurrencyAmount.fromRawAmount(refreshedPool.token0, balance0Bn.toString());
-  const amount1 = CurrencyAmount.fromRawAmount(refreshedPool.token1, balance1Bn.toString());
+  console.log(
+    `   - Size ${ethers.utils.formatUnits(cappedAmount0Bn, refreshedPool.token0.decimals)} ${refreshedPool.token0.symbol} + ${ethers.utils.formatUnits(cappedAmount1Bn, refreshedPool.token1.decimals)} ${refreshedPool.token1.symbol}`
+  );
+  console.log(`   - Total ${mintTotalIn1.toFixed(6)} ${refreshedPool.token1.symbol}`);
+
+  const amount0 = CurrencyAmount.fromRawAmount(refreshedPool.token0, cappedAmount0Bn.toString());
+  const amount1 = CurrencyAmount.fromRawAmount(refreshedPool.token1, cappedAmount1Bn.toString());
 
   const position = Position.fromAmounts({
     pool: refreshedPool.pool,
@@ -449,9 +458,8 @@ export async function mintNewPosition(
   }
 
   let swapReceipt: ContractReceipt | null = null;
-  const deficit0 = Math.max(0, targetAmount0 - balance0);
-  const deficit1 = Math.max(0, targetAmount1 - balance1);
-  if (deficit0 > 0) {
+  if (balance0 < targetAmount0) {
+    const deficit0 = targetAmount0 - balance0;
     const amountOut = toBigNumber(deficit0, poolContext.token0.decimals);
     const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
       tokenIn: poolContext.token1.address,
@@ -479,32 +487,31 @@ export async function mintNewPosition(
       amountInMaximum,
       deadline,
     });
-  } else if (deficit1 > 0) {
-    const amountOut = toBigNumber(deficit1, poolContext.token1.decimals);
-    const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
+  } else if (balance0 > targetAmount0) {
+    const excess0 = balance0 - targetAmount0;
+    const amountIn = toBigNumber(excess0, poolContext.token0.decimals);
+    const quotedOut: BigNumber = await swapRouter.callStatic.exactInputSingle({
       tokenIn: poolContext.token0.address,
       tokenOut: poolContext.token1.address,
       fee: poolContext.fee,
       recipient: owner,
       deadline,
-      amountOut,
-      amountInMaximum: ethers.constants.MaxUint256,
+      amountIn,
+      amountOutMinimum: 0,
       sqrtPriceLimitX96: 0,
     });
-    const amountInMaximum = quotedIn.mul(10_000 + settings.slippageToleranceBps).div(10_000);
+    const amountOutMin = quotedOut.mul(10_000 - settings.slippageToleranceBps).div(10_000);
 
-    console.log(
-      `   - Swap for ${deficit1.toFixed(6)} ${poolContext.token1.symbol} using ${poolContext.token0.symbol}`
-    );
-    await ensureAllowance(token0Contract, owner, swapRouter.address, amountInMaximum);
-    swapReceipt = await swapExactOutputSingle({
+    console.log(`   - Swap ${excess0.toFixed(6)} ${poolContext.token0.symbol} -> ${poolContext.token1.symbol}`);
+    await ensureAllowance(token0Contract, owner, swapRouter.address, amountIn);
+    swapReceipt = await swapExactInputSingle({
       router: swapRouter,
       tokenIn: poolContext.token0.address,
       tokenOut: poolContext.token1.address,
       fee: poolContext.fee,
       recipient: owner,
-      amountOut,
-      amountInMaximum,
+      amountIn,
+      amountOutMinimum: amountOutMin,
       deadline,
     });
   } else {
@@ -524,13 +531,24 @@ export async function mintNewPosition(
   console.log(`   - Tick range ${lowerTick} ~ ${upperTick}`);
   const refreshedPrice0In1 = parseFloat(refreshedPool.pool.token0Price.toSignificant(8));
   const refreshedTotalValueIn1 = balance0 * refreshedPrice0In1 + balance1;
-  console.log(
-    `   - Size ${balance0.toFixed(6)} ${refreshedPool.token0.symbol} + ${balance1.toFixed(6)} ${refreshedPool.token1.symbol}`
-  );
-  console.log(`   - Total ${refreshedTotalValueIn1.toFixed(6)} ${refreshedPool.token1.symbol}`);
+  const mintTotalIn1 = settings.targetTotalToken1 > 0 ? settings.targetTotalToken1 : refreshedTotalValueIn1;
+  const mintValueIn1 = mintTotalIn1 / 2;
+  const mintTarget0 = mintValueIn1 / refreshedPrice0In1;
+  const mintTarget1 = mintValueIn1;
+  const mintAmount0Bn =
+    settings.targetTotalToken1 > 0 ? toBigNumber(mintTarget0, refreshedPool.token0.decimals) : balance0Bn;
+  const mintAmount1Bn =
+    settings.targetTotalToken1 > 0 ? toBigNumber(mintTarget1, refreshedPool.token1.decimals) : balance1Bn;
+  const cappedAmount0Bn = mintAmount0Bn.gt(balance0Bn) ? balance0Bn : mintAmount0Bn;
+  const cappedAmount1Bn = mintAmount1Bn.gt(balance1Bn) ? balance1Bn : mintAmount1Bn;
 
-  const amount0 = CurrencyAmount.fromRawAmount(refreshedPool.token0, balance0Bn.toString());
-  const amount1 = CurrencyAmount.fromRawAmount(refreshedPool.token1, balance1Bn.toString());
+  console.log(
+    `   - Size ${ethers.utils.formatUnits(cappedAmount0Bn, refreshedPool.token0.decimals)} ${refreshedPool.token0.symbol} + ${ethers.utils.formatUnits(cappedAmount1Bn, refreshedPool.token1.decimals)} ${refreshedPool.token1.symbol}`
+  );
+  console.log(`   - Total ${mintTotalIn1.toFixed(6)} ${refreshedPool.token1.symbol}`);
+
+  const amount0 = CurrencyAmount.fromRawAmount(refreshedPool.token0, cappedAmount0Bn.toString());
+  const amount1 = CurrencyAmount.fromRawAmount(refreshedPool.token1, cappedAmount1Bn.toString());
 
   const position = Position.fromAmounts({
     pool: refreshedPool.pool,

@@ -84,15 +84,15 @@ body {
   background: transparent;
   text-align: left;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 6px;
   font-weight: 600;
   color: var(--muted);
   cursor: pointer;
 }
 
 .nav-item.active {
-  background: #1f1a17;
-  color: #ffffff;
+  background: rgba(243, 106, 43, 0.18);
+  color: #1f1a17;
 }
 
 .sidebar-footer {
@@ -103,10 +103,18 @@ body {
   padding: 78px 36px 60px;
 }
 
+.view {
+  display: none;
+}
+
+.view.view-active {
+  display: block;
+}
+
 .eyebrow {
   text-transform: uppercase;
   letter-spacing: 0.35em;
-  font-size: 0.95rem;
+  font-size: 1.1rem;
   color: var(--accent);
   margin: 0;
 }
@@ -130,11 +138,13 @@ h1 {
 
 .status-pill.ok {
   border-color: rgba(83, 150, 88, 0.5);
+  background: #f2fbf5;
   color: #1c5a30;
 }
 
 .status-pill.warn {
   border-color: rgba(206, 102, 48, 0.5);
+  background: #fff4ee;
   color: #8a3f18;
 }
 
@@ -166,6 +176,44 @@ h1 {
   border-color: rgba(243, 106, 43, 0.25);
 }
 
+.history-card {
+  padding: 18px 20px;
+}
+
+.table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+}
+
+.history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.history-table th,
+.history-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.history-table th {
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #4e3a2c;
+}
+
+.history-profit.positive {
+  color: #84cc16;
+}
+
+.history-profit.negative {
+  color: #ef4444;
+}
+
 .stat-value.profit-positive {
   color: #84cc16;
 }
@@ -187,11 +235,51 @@ h1 {
   margin-bottom: 16px;
 }
 
+.live-title {
+  color: #f97316;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.6);
+  animation: livePulse 2.4s infinite;
+}
+
+@keyframes livePulse {
+  0% {
+    transform: scale(0.98);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.98);
+    opacity: 0.75;
+  }
+}
+
 .stat-value {
   margin: 8px 0 6px;
   font-size: 1.5rem;
   font-weight: 700;
   color: #472d1f;
+}
+
+.stat-value.inline {
+  display: inline;
+  margin: 0;
+}
+
+.profit-inline {
+  margin-left: 8px;
 }
 
 .value-inline {
@@ -238,6 +326,18 @@ h1 {
 
 .ratio-token1 {
   background: linear-gradient(90deg, #3b82f6 0%, #60a5fa 100%);
+}
+
+.ratio-pnl {
+  background: linear-gradient(90deg, #16a34a 0%, #4ade80 100%);
+}
+
+.ratio-fees {
+  background: linear-gradient(90deg, #f97316 0%, #fb923c 100%);
+}
+
+.ratio-gas {
+  background: linear-gradient(90deg, #94a3b8 0%, #cbd5f5 100%);
 }
 
 .grid-main {

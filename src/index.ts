@@ -68,7 +68,6 @@ function toPositionRecord(result: RebalanceResult) {
 }
 
 async function handleSnapshot(snapshot: MonitorSnapshot) {
-  setSnapshot(snapshot);
   const config = getConfig();
 
   if (!state.initialNetValue) {
@@ -92,13 +91,22 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   const now = Date.now();
   const delayMs = config.rebalanceDelaySec * 1000;
   const shouldRebalance = outOfRange && state.outOfRangeSince > 0 && now - state.outOfRangeSince >= delayMs;
+  const remainingMs = outOfRange && state.outOfRangeSince > 0 ? Math.max(0, delayMs - (now - state.outOfRangeSince)) : null;
+  const remainingSec = remainingMs == null ? null : Math.ceil(remainingMs / 1000);
+
+  setSnapshot({
+    ...snapshot,
+    outOfRange,
+    rebalanceRemainingSec: remainingSec,
+  });
 
   const stopLossLine = state.initialNetValue * (1 - config.stopLossPercent / 100);
   if (!state.rebalancing && snapshot.netValueIn1 <= stopLossLine) {
     state.rebalancing = true;
     sendDiscordMessage(
       webhookUrl,
-      `STOP LOSS triggered. Net=${snapshot.netValueIn1.toFixed(4)} ${snapshot.symbol1} <= ${stopLossLine.toFixed(4)}`
+      `STOP LOSS triggered. Net=${snapshot.netValueIn1.toFixed(4)} ${snapshot.symbol1} <= ${stopLossLine.toFixed(4)}`,
+      'error'
     );
     try {
       const active = await getLatestActivePosition(db);
@@ -107,6 +115,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       if (active?.tokenId) {
         const details: CloseDetails = {
           closeTxHash: result.closeTxHash,
+          closeReason: 'stop_loss',
           closedNetValueIn1: result.closedNetValueIn1,
           realizedFeesIn1: result.closedFeesIn1,
           realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
@@ -135,13 +144,14 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
     }
 
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, `Rebalance start. Tick=${snapshot.currentTick}`);
+    sendDiscordMessage(webhookUrl, `Rebalance start. Tick=${snapshot.currentTick}`, 'warn');
 
     try {
       const active = await getLatestActivePosition(db);
       if (!active) {
         throw new Error('active position not found');
       }
+      const direction = snapshot.currentTick > snapshot.tickUpper ? 'upper' : 'lower';
       const result = await runRebalance(
         {
           tokenId: active.tokenId,
@@ -154,6 +164,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       if (active) {
         const details: CloseDetails = {
           closeTxHash: result.closeTxHash,
+          closeReason: `rebalance_auto(${direction})`,
           closedNetValueIn1: result.closedNetValueIn1,
           realizedFeesIn1: result.closedFeesIn1,
           realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
@@ -164,11 +175,11 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
       await insertPosition(db, toPositionRecord(result));
-      await startMonitorFor(result.tokenId);
-      sendDiscordMessage(webhookUrl, 'Rebalance done.');
+      await startMonitorFor(result.tokenId, result.netValueIn1);
+      sendDiscordMessage(webhookUrl, 'Rebalance done.', 'success');
     } catch (error) {
       console.error('Rebalance error:', error);
-      sendDiscordMessage(webhookUrl, `Rebalance error: ${error}`);
+      sendDiscordMessage(webhookUrl, `Rebalance error: ${error}`, 'error');
     } finally {
       state.rebalancing = false;
       state.outOfRangeSince = 0;
@@ -182,7 +193,7 @@ const apiActions = {
       throw new Error('Rebalance already running');
     }
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, 'Manual rebalance start.');
+    sendDiscordMessage(webhookUrl, 'Manual rebalance start.', 'warn');
     try {
       const active = await getLatestActivePosition(db);
       if (!active) {
@@ -200,6 +211,7 @@ const apiActions = {
       if (active) {
         const details: CloseDetails = {
           closeTxHash: result.closeTxHash,
+          closeReason: 'rebalance_manual',
           closedNetValueIn1: result.closedNetValueIn1,
           realizedFeesIn1: result.closedFeesIn1,
           realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
@@ -210,11 +222,11 @@ const apiActions = {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
       await insertPosition(db, toPositionRecord(result));
-      await startMonitorFor(result.tokenId);
-      sendDiscordMessage(webhookUrl, 'Manual rebalance done.');
+      await startMonitorFor(result.tokenId, result.netValueIn1);
+      sendDiscordMessage(webhookUrl, 'Manual rebalance done.', 'success');
     } catch (error) {
       console.error('Manual rebalance error:', error);
-      sendDiscordMessage(webhookUrl, `Manual rebalance error: ${error}`);
+      sendDiscordMessage(webhookUrl, `Manual rebalance error: ${error}`, 'error');
       throw error;
     } finally {
       state.rebalancing = false;
@@ -226,7 +238,7 @@ const apiActions = {
       throw new Error('Rebalance already running');
     }
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, 'Manual close start.');
+    sendDiscordMessage(webhookUrl, 'Manual close start.', 'warn');
     try {
       const active = await getLatestActivePosition(db);
       if (!active) {
@@ -235,6 +247,7 @@ const apiActions = {
       const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
       const details: CloseDetails = {
         closeTxHash: result.closeTxHash,
+        closeReason: 'manual_close',
         closedNetValueIn1: result.closedNetValueIn1,
         realizedFeesIn1: result.closedFeesIn1,
         realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
@@ -242,10 +255,10 @@ const apiActions = {
       };
       await closePositionWithDetails(db, active.tokenId, details);
       await maybeStopMonitor();
-      sendDiscordMessage(webhookUrl, 'Manual close done.');
+      sendDiscordMessage(webhookUrl, 'Manual close done.', 'success');
     } catch (error) {
       console.error('Manual close error:', error);
-      sendDiscordMessage(webhookUrl, `Manual close error: ${error}`);
+      sendDiscordMessage(webhookUrl, `Manual close error: ${error}`, 'error');
       throw error;
     } finally {
       state.rebalancing = false;
@@ -261,7 +274,7 @@ const apiActions = {
       throw new Error('active position already exists');
     }
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, 'Manual mint start.');
+    sendDiscordMessage(webhookUrl, 'Manual mint start.', 'warn');
     try {
       const result = await mintNewPosition(
         {
@@ -272,18 +285,18 @@ const apiActions = {
         'manual_create'
       );
       await insertPosition(db, toPositionRecord(result));
-      await startMonitorFor(result.tokenId);
-      sendDiscordMessage(webhookUrl, 'Manual mint done.');
+      await startMonitorFor(result.tokenId, result.netValueIn1);
+      sendDiscordMessage(webhookUrl, 'Manual mint done.', 'success');
     } catch (error) {
       console.error('Manual mint error:', error);
-      sendDiscordMessage(webhookUrl, `Manual mint error: ${error}`);
+      sendDiscordMessage(webhookUrl, `Manual mint error: ${error}`, 'error');
       throw error;
     } finally {
       state.rebalancing = false;
     }
   },
 };
-async function startMonitorFor(tokenId: string): Promise<void> {
+async function startMonitorFor(tokenId: string, initialNetValue?: number): Promise<void> {
   if (state.monitorController && state.monitorTokenId === tokenId) return;
   if (state.monitorController) {
     state.monitorController.stop();
@@ -300,7 +313,7 @@ async function startMonitorFor(tokenId: string): Promise<void> {
           void handleSnapshot(snapshot);
         },
       },
-      { tokenId }
+      { tokenId, initialNetValue }
     );
     state.monitorTokenId = tokenId;
   } catch (error) {
@@ -316,7 +329,7 @@ async function maybeStartMonitor(): Promise<void> {
     return;
   }
 
-  await startMonitorFor(active.tokenId);
+  await startMonitorFor(active.tokenId, active.netValueIn1);
 }
 
 async function maybeStopMonitor(): Promise<void> {

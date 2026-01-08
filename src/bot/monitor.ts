@@ -30,6 +30,7 @@ export type MonitorCallbacks = {
 
 export type MonitorOptions = {
   tokenId?: string;
+  initialNetValue?: number;
 };
 
 export type MonitorController = {
@@ -75,7 +76,7 @@ export async function startMonitor(
   console.log(`Owner : ${ownerAddress}`);
 
   const state: MonitorState = {
-    initialNetValue: null,
+    initialNetValue: typeof options.initialNetValue === 'number' ? options.initialNetValue : null,
     lastUpdateTime: 0,
     isUpdating: false,
   };

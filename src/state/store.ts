@@ -10,6 +10,8 @@ export type MonitorSnapshot = {
   tickLower: number;
   tickUpper: number;
   currentTick: number;
+  outOfRange?: boolean;
+  rebalanceRemainingSec?: number | null;
   ratio0: number;
   ratio1: number;
   amount0: number;

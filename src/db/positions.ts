@@ -24,6 +24,7 @@ export type PositionRecord = {
   rebalanceReason?: string;
   mintTxHash?: string;
   closeTxHash?: string;
+  closeReason?: string;
   closedNetValueIn1?: number;
   realizedFeesIn1?: number;
   realizedPnlIn1?: number;
@@ -44,10 +45,10 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       liquidity, amount0, amount1,
       price0_in_1, net_value_in_1,
       fees0, fees1, gas_cost_native, gas_cost_in_1,
-      rebalance_reason, mint_tx_hash, close_tx_hash,
+      rebalance_reason, mint_tx_hash, close_tx_hash, close_reason,
       closed_net_value_in_1, realized_fees_in_1, realized_pnl_in_1, closed_at,
       status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.tokenId,
       record.poolAddress,
@@ -72,6 +73,7 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       record.rebalanceReason ?? null,
       record.mintTxHash ?? null,
       record.closeTxHash ?? null,
+      record.closeReason ?? null,
       record.closedNetValueIn1 ?? null,
       record.realizedFeesIn1 ?? null,
       record.realizedPnlIn1 ?? null,
@@ -106,6 +108,7 @@ export async function closeLatestPosition(
 
 export type CloseDetails = {
   closeTxHash: string | null;
+  closeReason?: string | null;
   closedNetValueIn1: number | null;
   realizedFeesIn1: number | null;
   realizedPnlIn1: number | null;
@@ -123,6 +126,7 @@ export async function closePositionWithDetails(
     `UPDATE positions
      SET status = 'closed',
          close_tx_hash = ?,
+         close_reason = ?,
          closed_net_value_in_1 = ?,
          realized_fees_in_1 = ?,
          realized_pnl_in_1 = ?,
@@ -136,6 +140,7 @@ export async function closePositionWithDetails(
      )`,
     [
       details.closeTxHash,
+      details.closeReason ?? null,
       details.closedNetValueIn1,
       details.realizedFeesIn1,
       details.realizedPnlIn1,
@@ -181,6 +186,7 @@ export async function listPositions(db: SqliteDb, limit = 50): Promise<PositionR
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
+      close_reason AS closeReason,
       closed_net_value_in_1 AS closedNetValueIn1,
       realized_fees_in_1 AS realizedFeesIn1,
       realized_pnl_in_1 AS realizedPnlIn1,
@@ -212,6 +218,7 @@ export async function getLatestPosition(db: SqliteDb): Promise<PositionRecord | 
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
+      close_reason AS closeReason,
       closed_net_value_in_1 AS closedNetValueIn1,
       realized_fees_in_1 AS realizedFeesIn1,
       realized_pnl_in_1 AS realizedPnlIn1,
@@ -242,6 +249,7 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
+      close_reason AS closeReason,
       closed_net_value_in_1 AS closedNetValueIn1,
       realized_fees_in_1 AS realizedFeesIn1,
       realized_pnl_in_1 AS realizedPnlIn1,
