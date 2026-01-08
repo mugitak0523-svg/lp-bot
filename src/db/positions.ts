@@ -24,6 +24,10 @@ export type PositionRecord = {
   rebalanceReason?: string;
   mintTxHash?: string;
   closeTxHash?: string;
+  closedNetValueIn1?: number;
+  realizedFeesIn1?: number;
+  realizedPnlIn1?: number;
+  closedAt?: string;
   status: 'active' | 'closed';
   createdAt: string;
   updatedAt: string;
@@ -41,8 +45,9 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       price0_in_1, net_value_in_1,
       fees0, fees1, gas_cost_native, gas_cost_in_1,
       rebalance_reason, mint_tx_hash, close_tx_hash,
+      closed_net_value_in_1, realized_fees_in_1, realized_pnl_in_1, closed_at,
       status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.tokenId,
       record.poolAddress,
@@ -67,6 +72,10 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       record.rebalanceReason ?? null,
       record.mintTxHash ?? null,
       record.closeTxHash ?? null,
+      record.closedNetValueIn1 ?? null,
+      record.realizedFeesIn1 ?? null,
+      record.realizedPnlIn1 ?? null,
+      record.closedAt ?? null,
       record.status,
       record.createdAt,
       record.updatedAt,
@@ -92,6 +101,48 @@ export async function closeLatestPosition(
        LIMIT 1
      )`,
     [closeTxHash, now, tokenId]
+  );
+}
+
+export type CloseDetails = {
+  closeTxHash: string | null;
+  closedNetValueIn1: number | null;
+  realizedFeesIn1: number | null;
+  realizedPnlIn1: number | null;
+  closedAt: string;
+};
+
+export async function closePositionWithDetails(
+  db: SqliteDb,
+  tokenId: string,
+  details: CloseDetails
+): Promise<void> {
+  const now = new Date().toISOString();
+  await run(
+    db,
+    `UPDATE positions
+     SET status = 'closed',
+         close_tx_hash = ?,
+         closed_net_value_in_1 = ?,
+         realized_fees_in_1 = ?,
+         realized_pnl_in_1 = ?,
+         closed_at = ?,
+         updated_at = ?
+     WHERE id = (
+       SELECT id FROM positions
+       WHERE token_id = ? AND status = 'active'
+       ORDER BY id DESC
+       LIMIT 1
+     )`,
+    [
+      details.closeTxHash,
+      details.closedNetValueIn1,
+      details.realizedFeesIn1,
+      details.realizedPnlIn1,
+      details.closedAt,
+      now,
+      tokenId,
+    ]
   );
 }
 
@@ -130,6 +181,10 @@ export async function listPositions(db: SqliteDb, limit = 50): Promise<PositionR
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
+      closed_net_value_in_1 AS closedNetValueIn1,
+      realized_fees_in_1 AS realizedFeesIn1,
+      realized_pnl_in_1 AS realizedPnlIn1,
+      closed_at AS closedAt,
       status, created_at AS createdAt, updated_at AS updatedAt
      FROM positions
      ORDER BY id DESC
@@ -157,6 +212,10 @@ export async function getLatestPosition(db: SqliteDb): Promise<PositionRecord | 
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
+      closed_net_value_in_1 AS closedNetValueIn1,
+      realized_fees_in_1 AS realizedFeesIn1,
+      realized_pnl_in_1 AS realizedPnlIn1,
+      closed_at AS closedAt,
       status, created_at AS createdAt, updated_at AS updatedAt
      FROM positions
      ORDER BY id DESC
@@ -183,6 +242,10 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
+      closed_net_value_in_1 AS closedNetValueIn1,
+      realized_fees_in_1 AS realizedFeesIn1,
+      realized_pnl_in_1 AS realizedPnlIn1,
+      closed_at AS closedAt,
       status, created_at AS createdAt, updated_at AS updatedAt
      FROM positions
      WHERE status = 'active'

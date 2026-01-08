@@ -3,10 +3,17 @@ import 'dotenv/config';
 import { startApiServer } from './api/server';
 import { ethers } from 'ethers';
 
-import { startMonitor } from './bot/monitor';
-import { CloseResult, RebalanceResult, closePosition, mintNewPosition, runRebalance } from './bot/rebalance';
-import { getLatestActivePosition, insertPosition, closeLatestActivePosition } from './db/positions';
-import { initDb } from './db/sqlite';
+import { MonitorController, startMonitor } from './bot/monitor';
+import { RebalanceResult, closePosition, mintNewPosition, runRebalance } from './bot/rebalance';
+import {
+  CloseDetails,
+  closeLatestActivePosition,
+  closeLatestPosition,
+  closePositionWithDetails,
+  getLatestActivePosition,
+  insertPosition,
+} from './db/positions';
+import { awaitDbReady, initDb } from './db/sqlite';
 import { loadSettings } from './config/settings';
 import { getConfig, MonitorSnapshot, setSnapshot } from './state/store';
 import { sendDiscordMessage } from './utils/discord';
@@ -24,6 +31,8 @@ const state = {
   rebalancing: false,
   initialNetValue: 0,
   monitoring: false,
+  monitorTokenId: null as string | null,
+  monitorController: null as MonitorController | null,
 };
 
 function toPositionRecord(result: RebalanceResult) {
@@ -63,7 +72,12 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   const config = getConfig();
 
   if (!state.initialNetValue) {
-    state.initialNetValue = snapshot.netValueIn1;
+    const active = await getLatestActivePosition(db);
+    if (active?.netValueIn1) {
+      state.initialNetValue = active.netValueIn1;
+    } else {
+      state.initialNetValue = snapshot.netValueIn1;
+    }
   }
 
   const outOfRange = snapshot.currentTick < snapshot.tickLower || snapshot.currentTick > snapshot.tickUpper;
@@ -87,8 +101,22 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       `STOP LOSS triggered. Net=${snapshot.netValueIn1.toFixed(4)} ${snapshot.symbol1} <= ${stopLossLine.toFixed(4)}`
     );
     try {
-      const result = await closePosition({ removePercent: 100 });
-      await closeLatestActivePosition(db, result.closeTxHash);
+      const active = await getLatestActivePosition(db);
+      const tokenId = active?.tokenId ?? settings.tokenId;
+      const result = await closePosition({ removePercent: 100, tokenId });
+      if (active?.tokenId) {
+        const details: CloseDetails = {
+          closeTxHash: result.closeTxHash,
+          closedNetValueIn1: result.closedNetValueIn1,
+          realizedFeesIn1: result.closedFeesIn1,
+          realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          closedAt: new Date().toISOString(),
+        };
+        await closePositionWithDetails(db, active.tokenId, details);
+      } else {
+        await closeLatestActivePosition(db, result.closeTxHash);
+      }
+      await maybeStopMonitor();
       console.error('Stop loss done. Exiting.');
       process.exit(1);
     } catch (error) {
@@ -110,15 +138,29 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
     sendDiscordMessage(webhookUrl, `Rebalance start. Tick=${snapshot.currentTick}`);
 
     try {
+      const active = await getLatestActivePosition(db);
       const result = await runRebalance(
         {
           tickRange: config.tickRange,
           slippageToleranceBps: config.slippageBps,
+          targetTotalToken1: config.targetTotalToken1,
         },
         'auto'
       );
-      await closeLatestActivePosition(db, null);
+      if (active) {
+        const details: CloseDetails = {
+          closeTxHash: result.closeTxHash,
+          closedNetValueIn1: result.closedNetValueIn1,
+          realizedFeesIn1: result.closedFeesIn1,
+          realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          closedAt: new Date().toISOString(),
+        };
+        await closePositionWithDetails(db, active.tokenId, details);
+      } else {
+        await closeLatestActivePosition(db, result.closeTxHash);
+      }
       await insertPosition(db, toPositionRecord(result));
+      await startMonitorFor(result.tokenId);
       sendDiscordMessage(webhookUrl, 'Rebalance done.');
     } catch (error) {
       console.error('Rebalance error:', error);
@@ -130,7 +172,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   }
 }
 
-startApiServer(port, {
+const apiActions = {
   rebalance: async () => {
     if (state.rebalancing) {
       throw new Error('Rebalance already running');
@@ -138,15 +180,29 @@ startApiServer(port, {
     state.rebalancing = true;
     sendDiscordMessage(webhookUrl, 'Manual rebalance start.');
     try {
+      const active = await getLatestActivePosition(db);
       const result = await runRebalance(
         {
           tickRange: getConfig().tickRange,
           slippageToleranceBps: getConfig().slippageBps,
+          targetTotalToken1: getConfig().targetTotalToken1,
         },
         'manual'
       );
-      await closeLatestActivePosition(db, null);
+      if (active) {
+        const details: CloseDetails = {
+          closeTxHash: result.closeTxHash,
+          closedNetValueIn1: result.closedNetValueIn1,
+          realizedFeesIn1: result.closedFeesIn1,
+          realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          closedAt: new Date().toISOString(),
+        };
+        await closePositionWithDetails(db, active.tokenId, details);
+      } else {
+        await closeLatestActivePosition(db, result.closeTxHash);
+      }
       await insertPosition(db, toPositionRecord(result));
+      await startMonitorFor(result.tokenId);
       sendDiscordMessage(webhookUrl, 'Manual rebalance done.');
     } catch (error) {
       console.error('Manual rebalance error:', error);
@@ -164,8 +220,20 @@ startApiServer(port, {
     state.rebalancing = true;
     sendDiscordMessage(webhookUrl, 'Manual close start.');
     try {
-      const result = await closePosition({ removePercent: 100 });
-      await closeLatestActivePosition(db, result.closeTxHash);
+      const active = await getLatestActivePosition(db);
+      if (!active) {
+        throw new Error('active position not found');
+      }
+      const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
+      const details: CloseDetails = {
+        closeTxHash: result.closeTxHash,
+        closedNetValueIn1: result.closedNetValueIn1,
+        realizedFeesIn1: result.closedFeesIn1,
+        realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+        closedAt: new Date().toISOString(),
+      };
+      await closePositionWithDetails(db, active.tokenId, details);
+      await maybeStopMonitor();
       sendDiscordMessage(webhookUrl, 'Manual close done.');
     } catch (error) {
       console.error('Manual close error:', error);
@@ -191,11 +259,12 @@ startApiServer(port, {
         {
           tickRange: getConfig().tickRange,
           slippageToleranceBps: getConfig().slippageBps,
+          targetTotalToken1: getConfig().targetTotalToken1,
         },
         'manual_create'
       );
       await insertPosition(db, toPositionRecord(result));
-      startMonitorOnce();
+      await startMonitorFor(result.tokenId);
       sendDiscordMessage(webhookUrl, 'Manual mint done.');
     } catch (error) {
       console.error('Manual mint error:', error);
@@ -205,29 +274,29 @@ startApiServer(port, {
       state.rebalancing = false;
     }
   },
-  panic: async () => {
-    if (state.rebalancing) {
-      throw new Error('Rebalance already running');
-    }
-    state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, 'Panic close start.');
-    const result: CloseResult = await closePosition({ removePercent: 100 });
-    await closeLatestActivePosition(db, result.closeTxHash);
-    sendDiscordMessage(webhookUrl, 'Panic close done. Exiting.');
-    process.exit(1);
-  },
-});
-function startMonitorOnce(): void {
-  if (state.monitoring) return;
+};
+async function startMonitorFor(tokenId: string): Promise<void> {
+  if (state.monitorController && state.monitorTokenId === tokenId) return;
+  if (state.monitorController) {
+    state.monitorController.stop();
+    state.monitorController = null;
+  }
+
   state.monitoring = true;
-  startMonitor({
-    onSnapshot: (snapshot) => {
-      void handleSnapshot(snapshot);
-    },
-  }).catch((error) => {
+  try {
+    state.monitorController = await startMonitor(
+      {
+        onSnapshot: (snapshot) => {
+          void handleSnapshot(snapshot);
+        },
+      },
+      { tokenId }
+    );
+    state.monitorTokenId = tokenId;
+  } catch (error) {
     console.error(error);
     process.exit(1);
-  });
+  }
 }
 
 async function maybeStartMonitor(): Promise<void> {
@@ -237,7 +306,25 @@ async function maybeStartMonitor(): Promise<void> {
     return;
   }
 
-  startMonitorOnce();
+  await startMonitorFor(active.tokenId);
 }
 
-void maybeStartMonitor();
+async function maybeStopMonitor(): Promise<void> {
+  const active = await getLatestActivePosition(db);
+  if (active) return;
+  if (state.monitorController) {
+    state.monitorController.stop();
+    state.monitorController = null;
+    state.monitorTokenId = null;
+    state.monitoring = false;
+    console.log('No active position. Monitor stopped.');
+  }
+}
+
+async function bootstrap(): Promise<void> {
+  await awaitDbReady();
+  startApiServer(port, apiActions);
+  await maybeStartMonitor();
+}
+
+void bootstrap();

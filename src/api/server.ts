@@ -9,7 +9,6 @@ export type ApiActions = {
   rebalance?: () => Promise<void>;
   close?: () => Promise<void>;
   mint?: () => Promise<void>;
-  panic?: () => Promise<void>;
 };
 
 export function startApiServer(port: number, actions: ApiActions = {}): void {
@@ -39,6 +38,7 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       slippageBps: typeof body.slippageBps === 'number' ? body.slippageBps : undefined,
       stopLossPercent: typeof body.stopLossPercent === 'number' ? body.stopLossPercent : undefined,
       maxGasPriceGwei: typeof body.maxGasPriceGwei === 'number' ? body.maxGasPriceGwei : undefined,
+      targetTotalToken1: typeof body.targetTotalToken1 === 'number' ? body.targetTotalToken1 : undefined,
     });
     res.json(next);
   });
@@ -100,14 +100,6 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     }
   });
 
-  app.post('/action/panic', (_req, res) => {
-    if (!actions.panic) {
-      res.status(501).json({ error: 'panic not configured' });
-      return;
-    }
-    void actions.panic();
-    res.json({ status: 'accepted' });
-  });
 
   app.listen(port, () => {
     console.log(`API server listening on :${port}`);

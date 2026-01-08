@@ -23,10 +23,27 @@ function applySlippage(value: number, slippageBps: number): number {
   return value * ratio;
 }
 
+function calcNetValueIn1(params: {
+  amount0: BigNumber;
+  amount1: BigNumber;
+  token0Decimals: number;
+  token1Decimals: number;
+  price0In1: number;
+}): number {
+  const val0 = parseFloat(ethers.utils.formatUnits(params.amount0, params.token0Decimals));
+  const val1 = parseFloat(ethers.utils.formatUnits(params.amount1, params.token1Decimals));
+  return val0 * params.price0In1 + val1;
+}
+
 export type CloseResult = {
   closeTxHash: string | null;
   collected0: string;
   collected1: string;
+  principal0: string;
+  principal1: string;
+  price0In1: number;
+  closedNetValueIn1: number;
+  closedFeesIn1: number;
 };
 
 export type RebalanceResult = {
@@ -52,6 +69,9 @@ export type RebalanceResult = {
   gasCostIn1: number;
   mintTxHash: string;
   reason: string;
+  closeTxHash: string;
+  closedNetValueIn1: number;
+  closedFeesIn1: number;
 };
 
 export async function closePosition(overrides: Partial<WriteSettings> = {}): Promise<CloseResult> {
@@ -61,9 +81,15 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
   const owner = await signer.getAddress();
 
   const nfpm = getPositionManager(signer);
+  const poolContext = await loadPoolContext(providers.http, settings.poolAddress, settings.chainId);
   const positionData = await nfpm.positions(settings.tokenId);
   const liquidity: BigNumber = positionData.liquidity;
   const deadline = Math.floor(Date.now() / 1000) + settings.rebalanceDeadlineSec;
+  const price0In1 = parseFloat(poolContext.pool.token0Price.toSignificant(8));
+
+  let principal0 = BigNumber.from(0);
+  let principal1 = BigNumber.from(0);
+  let decreaseReceipt: ContractReceipt | null = null;
 
   console.log(`\n=== Close Position ===`);
   console.log(`Owner: ${owner}`);
@@ -71,7 +97,10 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
   if (liquidity.gt(0)) {
     const removeLiquidity = liquidity.mul(settings.removePercent).div(100);
     console.log(`1) Decrease Liquidity: ${settings.removePercent}%`);
-    await decreaseLiquidity(nfpm, settings.tokenId, removeLiquidity, deadline);
+    decreaseReceipt = await decreaseLiquidity(nfpm, settings.tokenId, removeLiquidity, deadline);
+    const principalAmounts = parseEventAmounts(decreaseReceipt);
+    principal0 = principalAmounts.amount0;
+    principal1 = principalAmounts.amount1;
   } else {
     console.log('1) Liquidity already zero. Skip decrease.');
   }
@@ -79,12 +108,29 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
   console.log('2) Collect fees and principal');
   const collectReceipt = await collectAll(nfpm, settings.tokenId, owner);
   const collected = parseEventAmounts(collectReceipt);
+  const fees0 = collected.amount0.gt(principal0) ? collected.amount0.sub(principal0) : BigNumber.from(0);
+  const fees1 = collected.amount1.gt(principal1) ? collected.amount1.sub(principal1) : BigNumber.from(0);
+  const closedNetValueIn1 = calcNetValueIn1({
+    amount0: collected.amount0,
+    amount1: collected.amount1,
+    token0Decimals: poolContext.token0.decimals,
+    token1Decimals: poolContext.token1.decimals,
+    price0In1,
+  });
+  const closedFeesIn1 =
+    parseFloat(ethers.utils.formatUnits(fees0, poolContext.token0.decimals)) * price0In1 +
+    parseFloat(ethers.utils.formatUnits(fees1, poolContext.token1.decimals));
   console.log('=== Close Done ===');
 
   return {
     closeTxHash: collectReceipt.transactionHash ?? null,
     collected0: collected.amount0.toString(),
     collected1: collected.amount1.toString(),
+    principal0: principal0.toString(),
+    principal1: principal1.toString(),
+    price0In1,
+    closedNetValueIn1,
+    closedFeesIn1,
   };
 }
 
@@ -273,11 +319,28 @@ export async function runRebalance(
   const mintTxHash = receipt.transactionHash;
   const mintedTokenId = minted.tokenId ?? settings.tokenId;
   const updatedPosition = await nfpm.positions(mintedTokenId);
+  const positionNetValueIn1 = calcNetValueIn1({
+    amount0: minted.amount0,
+    amount1: minted.amount1,
+    token0Decimals: refreshedPool.token0.decimals,
+    token1Decimals: refreshedPool.token1.decimals,
+    price0In1: refreshedPrice0In1,
+  });
 
   const principal0 = decreaseReceipt ? parseEventAmounts(decreaseReceipt).amount0 : BigNumber.from(0);
   const principal1 = decreaseReceipt ? parseEventAmounts(decreaseReceipt).amount1 : BigNumber.from(0);
   const fees0 = collected.amount0.gt(principal0) ? collected.amount0.sub(principal0) : BigNumber.from(0);
   const fees1 = collected.amount1.gt(principal1) ? collected.amount1.sub(principal1) : BigNumber.from(0);
+  const closedNetValueIn1 = calcNetValueIn1({
+    amount0: collected.amount0,
+    amount1: collected.amount1,
+    token0Decimals: poolContext.token0.decimals,
+    token1Decimals: poolContext.token1.decimals,
+    price0In1,
+  });
+  const closedFeesIn1 =
+    parseFloat(ethers.utils.formatUnits(fees0, poolContext.token0.decimals)) * price0In1 +
+    parseFloat(ethers.utils.formatUnits(fees1, poolContext.token1.decimals));
 
   const gasCosts: BigNumber[] = [];
   if (decreaseReceipt) gasCosts.push(decreaseReceipt.gasUsed.mul(decreaseReceipt.effectiveGasPrice));
@@ -307,13 +370,16 @@ export async function runRebalance(
     amount0: minted.amount0.toString(),
     amount1: minted.amount1.toString(),
     price0In1: refreshedPrice0In1,
-    netValueIn1: refreshedTotalValueIn1,
+    netValueIn1: positionNetValueIn1,
     fees0: fees0.toString(),
     fees1: fees1.toString(),
     gasCostNative,
     gasCostIn1,
     mintTxHash,
     reason,
+    closeTxHash: collectReceipt.transactionHash,
+    closedNetValueIn1,
+    closedFeesIn1,
   };
 }
 
@@ -479,6 +545,13 @@ export async function mintNewPosition(
   const mintTxHash = receipt.transactionHash;
   const mintedTokenId = minted.tokenId ?? settings.tokenId;
   const updatedPosition = await nfpm.positions(mintedTokenId);
+  const positionNetValueIn1 = calcNetValueIn1({
+    amount0: minted.amount0,
+    amount1: minted.amount1,
+    token0Decimals: refreshedPool.token0.decimals,
+    token1Decimals: refreshedPool.token1.decimals,
+    price0In1: refreshedPrice0In1,
+  });
 
   const gasCosts: BigNumber[] = [];
   if (swapReceipt) gasCosts.push(swapReceipt.gasUsed.mul(swapReceipt.effectiveGasPrice));
@@ -506,13 +579,16 @@ export async function mintNewPosition(
     amount0: minted.amount0.toString(),
     amount1: minted.amount1.toString(),
     price0In1: refreshedPrice0In1,
-    netValueIn1: refreshedTotalValueIn1,
+    netValueIn1: positionNetValueIn1,
     fees0: '0',
     fees1: '0',
     gasCostNative,
     gasCostIn1,
     mintTxHash,
     reason,
+    closeTxHash: '',
+    closedNetValueIn1: 0,
+    closedFeesIn1: 0,
   };
 }
 

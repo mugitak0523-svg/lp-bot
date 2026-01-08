@@ -5,6 +5,7 @@ import sqlite3 from 'sqlite3';
 export type SqliteDb = sqlite3.Database;
 
 let dbInstance: SqliteDb | null = null;
+let dbReady: Promise<void> | null = null;
 
 export function initDb(filePath: string): SqliteDb {
   if (dbInstance) return dbInstance;
@@ -16,8 +17,8 @@ export function initDb(filePath: string): SqliteDb {
   const db = new sqlite3.Database(filePath);
   dbInstance = db;
 
-  db.serialize(() => {
-    db.run(
+  dbReady = new Promise((resolve, reject) => {
+    db.exec(
       `CREATE TABLE IF NOT EXISTS positions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         token_id TEXT NOT NULL,
@@ -43,14 +44,32 @@ export function initDb(filePath: string): SqliteDb {
         rebalance_reason TEXT,
         mint_tx_hash TEXT,
         close_tx_hash TEXT,
+        closed_net_value_in_1 REAL,
+        realized_fees_in_1 REAL,
+        realized_pnl_in_1 REAL,
+        closed_at TEXT,
         status TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
-      );`
+      );
+      CREATE INDEX IF NOT EXISTS idx_positions_token_id ON positions(token_id);
+      CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
+      CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);`,
+      (err) => {
+        if (err) {
+          reject(err);
+          return;
+        }
+        Promise.all([
+          ensureColumn(db, 'positions', 'closed_net_value_in_1', 'REAL'),
+          ensureColumn(db, 'positions', 'realized_fees_in_1', 'REAL'),
+          ensureColumn(db, 'positions', 'realized_pnl_in_1', 'REAL'),
+          ensureColumn(db, 'positions', 'closed_at', 'TEXT'),
+        ])
+          .then(() => resolve())
+          .catch(reject);
+      }
     );
-    db.run(`CREATE INDEX IF NOT EXISTS idx_positions_token_id ON positions(token_id);`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);`);
-    db.run(`CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);`);
   });
 
   return db;
@@ -61,6 +80,35 @@ export function getDb(): SqliteDb {
     throw new Error('DB not initialized');
   }
   return dbInstance;
+}
+
+export async function awaitDbReady(): Promise<void> {
+  if (!dbReady) return;
+  await dbReady;
+}
+
+function ensureColumn(db: SqliteDb, table: string, column: string, type: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    db.all(`PRAGMA table_info(${table});`, [], (err, rows) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      const cols = rows as Array<{ name?: string }>;
+      const exists = cols.some((r) => r.name === column);
+      if (exists) {
+        resolve();
+        return;
+      }
+      db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type};`, (err2) => {
+        if (err2) {
+          reject(err2);
+          return;
+        }
+        resolve();
+      });
+    });
+  });
 }
 
 export function run(db: SqliteDb, sql: string, params: unknown[] = []): Promise<sqlite3.RunResult> {

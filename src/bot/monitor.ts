@@ -28,14 +28,27 @@ export type MonitorCallbacks = {
   onSnapshot?: (snapshot: MonitorSnapshot) => void;
 };
 
-export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<void> {
+export type MonitorOptions = {
+  tokenId?: string;
+};
+
+export type MonitorController = {
+  tokenId: string;
+  stop: () => void;
+};
+
+export async function startMonitor(
+  callbacks: MonitorCallbacks = {},
+  options: MonitorOptions = {}
+): Promise<MonitorController> {
   const settings = loadSettings();
+  const tokenId = options.tokenId ?? settings.tokenId;
   const httpProvider = createHttpProvider(settings.rpcUrl);
 
   const nfpm = new ethers.Contract(NFPM_ADDRESS, NFPM_ABI.abi, httpProvider);
   const poolContract = new ethers.Contract(settings.poolAddress, PoolABI.abi, httpProvider);
 
-  const tokenIdBN = ethers.BigNumber.from(settings.tokenId);
+  const tokenIdBN = ethers.BigNumber.from(tokenId);
   const ownerAddress = await nfpm.ownerOf(tokenIdBN);
 
   const [token0Addr, token1Addr, fee] = await Promise.all([
@@ -58,7 +71,7 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   const token1 = new Token(settings.chainId, token1Addr, dec1, sym1);
 
   logHeader('Uniswap V3 LP Monitor');
-  console.log(`Target: TokenID ${settings.tokenId} (${sym0}/${sym1})`);
+  console.log(`Target: TokenID ${tokenId} (${sym0}/${sym1})`);
   console.log(`Owner : ${ownerAddress}`);
 
   const state: MonitorState = {
@@ -190,6 +203,7 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   let wsProvider = createWsProvider(settings.rpcWss);
   let nfpmWs: ethers.Contract | null = null;
   let poolWs: ethers.Contract | null = null;
+  let stopped = false;
 
   const cleanupWs = (): void => {
     if (poolWs) poolWs.removeAllListeners();
@@ -199,10 +213,12 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   };
 
   const handleWsDisconnect = (): void => {
+    if (stopped) return;
     console.error('WS Closed. Reconnecting...');
     cleanupWs();
     wsProvider.destroy();
     setTimeout(() => {
+      if (stopped) return;
       wsProvider = createWsProvider(settings.rpcWss);
       attachWsListeners(wsProvider);
     }, 1000);
@@ -229,11 +245,22 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   };
 
   attachWsListeners(wsProvider);
+
+  return {
+    tokenId,
+    stop: () => {
+      stopped = true;
+      cleanupWs();
+      wsProvider.destroy();
+    },
+  };
 }
 
 if (require.main === module) {
-  startMonitor().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  startMonitor()
+    .then(() => undefined)
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
 }
