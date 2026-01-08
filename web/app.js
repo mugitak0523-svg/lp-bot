@@ -4,17 +4,19 @@ const activeTokenEl = document.getElementById('active-token');
 const activeRangeEl = document.getElementById('active-range');
 const activeSizeEl = document.getElementById('active-size');
 const activePriceEl = document.getElementById('active-price');
+const activeGasEl = document.getElementById('active-gas');
 const activeStatusEl = document.getElementById('active-status');
 const netValueEl = document.getElementById('net-value');
 const netPnlEl = document.getElementById('net-pnl');
 const feesEl = document.getElementById('fees');
+const profitTotalEl = document.getElementById('profit-total');
+const profitDetailEl = document.getElementById('profit-detail');
 const ratioFill0 = document.getElementById('ratio-fill');
 const ratioFill1 = document.getElementById('ratio-fill-1');
 const ratioText = document.getElementById('ratio-text');
 const feeRatioFill0 = document.getElementById('fee-ratio-fill');
 const feeRatioFill1 = document.getElementById('fee-ratio-fill-1');
 const feeRatioText = document.getElementById('fee-ratio-text');
-const feesCard = document.getElementById('card-fees');
 const createdPriceEl = document.getElementById('created-price');
 const configForm = document.getElementById('config-form');
 const rebalanceBtn = document.getElementById('btn-rebalance');
@@ -23,9 +25,17 @@ const createBtn = document.getElementById('btn-create');
 const createHint = document.getElementById('create-hint');
 
 const API_BASE = window.location.origin;
+let activeGasIn1 = null;
+let activeSymbol1 = null;
+let activeSizeIn1 = null;
 
 function formatNumber(value, digits = 4) {
   return Number(value).toFixed(digits);
+}
+
+function formatSigned(value, digits = 4) {
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${formatNumber(value, digits)}`;
 }
 
 async function fetchJson(path, options = {}) {
@@ -51,7 +61,9 @@ async function loadStatus() {
     feeRatioFill1.style.width = '50%';
     feeRatioText.textContent = '-';
     createdPriceEl.textContent = '-';
-    feesCard.classList.remove('positive', 'negative');
+    profitTotalEl.textContent = '-';
+    profitDetailEl.textContent = '-';
+    profitTotalEl.classList.remove('profit-positive', 'profit-negative');
     return;
   }
 
@@ -79,9 +91,17 @@ async function loadStatus() {
   feeRatioFill1.style.width = `${feeRatio1}%`;
   feeRatioText.textContent = `${data.symbol0} ${formatNumber(feeRatio0, 2)}% / ${data.symbol1} ${formatNumber(feeRatio1, 2)}%`;
 
-  const pnlPlusFees = (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0);
-  feesCard.classList.toggle('positive', pnlPlusFees > 0);
-  feesCard.classList.toggle('negative', pnlPlusFees < 0);
+  const gasIn1 = activeGasIn1 ?? 0;
+  const symbol1 = activeSymbol1 ?? data.symbol1 ?? '';
+  const profitTotal = (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0) - gasIn1;
+  const baseSize = activeSizeIn1 ?? 0;
+  const profitPct = baseSize > 0 ? (profitTotal / baseSize) * 100 : null;
+  const profitSuffix = profitPct == null ? '' : ` (${formatSigned(profitPct, 2)}%)`;
+  const profitLabel = `${formatSigned(profitTotal, 4)} ${symbol1}${profitSuffix}`.trim();
+  profitTotalEl.textContent = profitLabel || '-';
+  profitDetailEl.textContent = `PnL ${formatNumber(data.pnl ?? 0, 2)} + Fees ${formatNumber(data.feeTotalIn1 ?? 0, 2)} - Gas ${formatNumber(gasIn1, 4)}`;
+  profitTotalEl.classList.toggle('profit-positive', profitTotal > 0);
+  profitTotalEl.classList.toggle('profit-negative', profitTotal < 0);
 }
 
 async function loadConfig() {
@@ -99,7 +119,11 @@ async function loadActivePosition() {
     activeRangeEl.textContent = '-';
     activeSizeEl.textContent = '-';
     activePriceEl.textContent = '-';
+    activeGasEl.textContent = '-';
     activeStatusEl.textContent = 'no active position';
+    activeGasIn1 = null;
+    activeSymbol1 = null;
+    activeSizeIn1 = null;
     createBtn.disabled = false;
     createHint.textContent = '';
     return;
@@ -108,7 +132,12 @@ async function loadActivePosition() {
   activeRangeEl.textContent = `tick ${data.tickLower} ~ ${data.tickUpper}`;
   activeSizeEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.token1Symbol}`;
   activePriceEl.textContent = `1 ${data.token0Symbol} = ${formatNumber(data.price0In1, 4)} ${data.token1Symbol}`;
+  activeGasEl.textContent =
+    data.gasCostIn1 != null ? `${formatNumber(data.gasCostIn1, 4)} ${data.token1Symbol}` : '-';
   activeStatusEl.textContent = data.status;
+  activeGasIn1 = data.gasCostIn1 ?? null;
+  activeSymbol1 = data.token1Symbol ?? null;
+  activeSizeIn1 = data.netValueIn1 ?? null;
   createdPriceEl.textContent = activePriceEl.textContent;
   const isActive = data.status === 'active';
   createBtn.disabled = isActive;

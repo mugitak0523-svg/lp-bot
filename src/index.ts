@@ -139,8 +139,12 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
 
     try {
       const active = await getLatestActivePosition(db);
+      if (!active) {
+        throw new Error('active position not found');
+      }
       const result = await runRebalance(
         {
+          tokenId: active.tokenId,
           tickRange: config.tickRange,
           slippageToleranceBps: config.slippageBps,
           targetTotalToken1: config.targetTotalToken1,
@@ -181,8 +185,12 @@ const apiActions = {
     sendDiscordMessage(webhookUrl, 'Manual rebalance start.');
     try {
       const active = await getLatestActivePosition(db);
+      if (!active) {
+        throw new Error('active position not found');
+      }
       const result = await runRebalance(
         {
+          tokenId: active.tokenId,
           tickRange: getConfig().tickRange,
           slippageToleranceBps: getConfig().slippageBps,
           targetTotalToken1: getConfig().targetTotalToken1,
@@ -282,6 +290,8 @@ async function startMonitorFor(tokenId: string): Promise<void> {
     state.monitorController = null;
   }
 
+  state.initialNetValue = 0;
+  state.outOfRangeSince = 0;
   state.monitoring = true;
   try {
     state.monitorController = await startMonitor(

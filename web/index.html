@@ -39,28 +39,36 @@
 
         <section class="grid-main">
           <div class="grid-left">
-          <article class="stat-card" id="card-net">
-            <p class="card-title">Position Size</p>
-            <p class="stat-value">
-              <span id="net-value">-</span>
-              <span class="value-inline hidden" id="net-pnl">-</span>
-            </p>
-            <div class="ratio-bar" aria-hidden="true">
-              <div class="ratio-fill ratio-token0" id="ratio-fill"></div>
-              <div class="ratio-fill ratio-token1" id="ratio-fill-1"></div>
+            <div class="grid-top">
+              <article class="stat-card" id="card-net">
+                <p class="card-title">Position Size</p>
+                <p class="stat-value">
+                  <span id="net-value">-</span>
+                  <span class="value-inline hidden" id="net-pnl">-</span>
+                </p>
+                <div class="ratio-bar" aria-hidden="true">
+                  <div class="ratio-fill ratio-token0" id="ratio-fill"></div>
+                  <div class="ratio-fill ratio-token1" id="ratio-fill-1"></div>
+                </div>
+                <p class="ratio-text" id="ratio-text">-</p>
+              </article>
+              <article class="stat-card" id="card-fees">
+                <p class="card-title">Fees</p>
+                <p class="stat-value" id="fees">-</p>
+                <div class="ratio-bar" aria-hidden="true">
+                  <div class="ratio-fill ratio-token0" id="fee-ratio-fill"></div>
+                  <div class="ratio-fill ratio-token1" id="fee-ratio-fill-1"></div>
+                </div>
+                <p class="ratio-text" id="fee-ratio-text">-</p>
+              </article>
+              <article class="stat-card" id="card-profit">
+                <p class="card-title">Profit</p>
+                <p class="stat-value" id="profit-total">-</p>
+                <p class="stat-sub" id="profit-detail">-</p>
+              </article>
             </div>
-            <p class="ratio-text" id="ratio-text">-</p>
-          </article>
-          <article class="stat-card" id="card-fees">
-            <p class="card-title">Fees</p>
-            <p class="stat-value" id="fees">-</p>
-            <div class="ratio-bar" aria-hidden="true">
-              <div class="ratio-fill ratio-token0" id="fee-ratio-fill"></div>
-              <div class="ratio-fill ratio-token1" id="fee-ratio-fill-1"></div>
-            </div>
-            <p class="ratio-text" id="fee-ratio-text">-</p>
-          </article>
-          <article class="card" id="card-active">
+            <div class="grid-bottom">
+              <article class="card" id="card-active">
             <h2 class="card-title">Active Position</h2>
             <div class="metric">
               <span class="label">Token ID</span>
@@ -79,16 +87,21 @@
               <span class="value" id="active-price">-</span>
             </div>
             <div class="metric">
+              <span class="label">Gas (created)</span>
+              <span class="value" id="active-gas">-</span>
+            </div>
+            <div class="metric">
               <span class="label">Status</span>
               <span class="value" id="active-status">-</span>
             </div>
           </article>
 
-          <article class="card" id="card-live">
+              <article class="card" id="card-live">
             <h2 class="card-title">Live Price</h2>
             <p class="stat-value" id="price">-</p>
             <p class="stat-sub">Created Price <span id="created-price">-</span></p>
           </article>
+            </div>
           </div>
 
           <article class="card" id="card-actions">

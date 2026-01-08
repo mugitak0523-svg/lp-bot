@@ -161,19 +161,17 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.stat-card.positive {
-  border-color: #84cc16;
-  border-width: 2px;
-}
-
-.stat-card.negative {
-  border-color: #ef4444;
-  border-width: 2px;
-}
-
 .stat-card.highlight {
   background: #fff7f1;
   border-color: rgba(243, 106, 43, 0.25);
+}
+
+.stat-value.profit-positive {
+  color: #84cc16;
+}
+
+.stat-value.profit-negative {
+  color: #ef4444;
 }
 
 .card-title {
@@ -252,9 +250,20 @@ h1 {
 
 .grid-left {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
   gap: 20px;
   align-content: start;
+}
+
+.grid-top {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.grid-bottom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 20px;
 }
 
 @media (max-width: 1100px) {
@@ -262,7 +271,8 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .grid-left {
+  .grid-top,
+  .grid-bottom {
     grid-template-columns: 1fr;
   }
 }

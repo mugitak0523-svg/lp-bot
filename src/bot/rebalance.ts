@@ -7,7 +7,7 @@ import { createHybridProvider } from '../utils/provider';
 import { ensureAllowance, getErc20 } from '../uniswap/erc20';
 import { loadPoolContext } from '../uniswap/pool';
 import { getPositionManager, buildMintCall, collectAll, decreaseLiquidity, parseEventAmounts } from '../uniswap/positions';
-import { getSwapRouter, swapExactInputSingle } from '../uniswap/swap';
+import { getSwapRouter, swapExactOutputSingle } from '../uniswap/swap';
 import { NFPM_ADDRESS } from '../uniswap/addresses';
 
 function toFixedAmount(value: number, decimals: number): string {
@@ -33,6 +33,24 @@ function calcNetValueIn1(params: {
   const val0 = parseFloat(ethers.utils.formatUnits(params.amount0, params.token0Decimals));
   const val1 = parseFloat(ethers.utils.formatUnits(params.amount1, params.token1Decimals));
   return val0 * params.price0In1 + val1;
+}
+
+function calcPositionNetValueIn1(params: {
+  pool: Position['pool'];
+  liquidity: BigNumber;
+  tickLower: number;
+  tickUpper: number;
+}): number {
+  const position = new Position({
+    pool: params.pool,
+    liquidity: params.liquidity.toString(),
+    tickLower: params.tickLower,
+    tickUpper: params.tickUpper,
+  });
+  const amount0 = parseFloat(position.amount0.toSignificant(10));
+  const amount1 = parseFloat(position.amount1.toSignificant(10));
+  const price0In1 = parseFloat(params.pool.token0Price.toSignificant(10));
+  return amount0 * price0In1 + amount1;
 }
 
 export type CloseResult = {
@@ -201,58 +219,62 @@ export async function runRebalance(
   }
 
   let swapReceipt: ContractReceipt | null = null;
-  if (balance0 > targetAmount0) {
-    const excess0 = balance0 - targetAmount0;
-    const amountIn = toBigNumber(excess0, poolContext.token0.decimals);
-    const quotedOut: BigNumber = await swapRouter.callStatic.exactInputSingle({
-      tokenIn: poolContext.token0.address,
-      tokenOut: poolContext.token1.address,
-      fee: poolContext.fee,
-      recipient: owner,
-      deadline,
-      amountIn,
-      amountOutMinimum: 0,
-      sqrtPriceLimitX96: 0,
-    });
-    const amountOutMin = quotedOut.mul(10_000 - settings.slippageToleranceBps).div(10_000);
-
-    console.log(`   - Swap ${excess0.toFixed(6)} ${poolContext.token0.symbol} -> ${poolContext.token1.symbol}`);
-    await ensureAllowance(token0Contract, owner, swapRouter.address, amountIn);
-    swapReceipt = await swapExactInputSingle({
-      router: swapRouter,
-      tokenIn: poolContext.token0.address,
-      tokenOut: poolContext.token1.address,
-      fee: poolContext.fee,
-      recipient: owner,
-      amountIn,
-      amountOutMinimum: amountOutMin,
-      deadline,
-    });
-  } else if (balance1 > targetAmount1) {
-    const excess1 = balance1 - targetAmount1;
-    const amountIn = toBigNumber(excess1, poolContext.token1.decimals);
-    const quotedOut: BigNumber = await swapRouter.callStatic.exactInputSingle({
+  const deficit0 = Math.max(0, targetAmount0 - balance0);
+  const deficit1 = Math.max(0, targetAmount1 - balance1);
+  if (deficit0 > 0) {
+    const amountOut = toBigNumber(deficit0, poolContext.token0.decimals);
+    const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
       tokenIn: poolContext.token1.address,
       tokenOut: poolContext.token0.address,
       fee: poolContext.fee,
       recipient: owner,
       deadline,
-      amountIn,
-      amountOutMinimum: 0,
+      amountOut,
+      amountInMaximum: ethers.constants.MaxUint256,
       sqrtPriceLimitX96: 0,
     });
-    const amountOutMin = quotedOut.mul(10_000 - settings.slippageToleranceBps).div(10_000);
+    const amountInMaximum = quotedIn.mul(10_000 + settings.slippageToleranceBps).div(10_000);
 
-    console.log(`   - Swap ${excess1.toFixed(6)} ${poolContext.token1.symbol} -> ${poolContext.token0.symbol}`);
-    await ensureAllowance(token1Contract, owner, swapRouter.address, amountIn);
-    swapReceipt = await swapExactInputSingle({
+    console.log(
+      `   - Swap for ${deficit0.toFixed(6)} ${poolContext.token0.symbol} using ${poolContext.token1.symbol}`
+    );
+    await ensureAllowance(token1Contract, owner, swapRouter.address, amountInMaximum);
+    swapReceipt = await swapExactOutputSingle({
       router: swapRouter,
       tokenIn: poolContext.token1.address,
       tokenOut: poolContext.token0.address,
       fee: poolContext.fee,
       recipient: owner,
-      amountIn,
-      amountOutMinimum: amountOutMin,
+      amountOut,
+      amountInMaximum,
+      deadline,
+    });
+  } else if (deficit1 > 0) {
+    const amountOut = toBigNumber(deficit1, poolContext.token1.decimals);
+    const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
+      tokenIn: poolContext.token0.address,
+      tokenOut: poolContext.token1.address,
+      fee: poolContext.fee,
+      recipient: owner,
+      deadline,
+      amountOut,
+      amountInMaximum: ethers.constants.MaxUint256,
+      sqrtPriceLimitX96: 0,
+    });
+    const amountInMaximum = quotedIn.mul(10_000 + settings.slippageToleranceBps).div(10_000);
+
+    console.log(
+      `   - Swap for ${deficit1.toFixed(6)} ${poolContext.token1.symbol} using ${poolContext.token0.symbol}`
+    );
+    await ensureAllowance(token0Contract, owner, swapRouter.address, amountInMaximum);
+    swapReceipt = await swapExactOutputSingle({
+      router: swapRouter,
+      tokenIn: poolContext.token0.address,
+      tokenOut: poolContext.token1.address,
+      fee: poolContext.fee,
+      recipient: owner,
+      amountOut,
+      amountInMaximum,
       deadline,
     });
   } else {
@@ -319,12 +341,11 @@ export async function runRebalance(
   const mintTxHash = receipt.transactionHash;
   const mintedTokenId = minted.tokenId ?? settings.tokenId;
   const updatedPosition = await nfpm.positions(mintedTokenId);
-  const positionNetValueIn1 = calcNetValueIn1({
-    amount0: minted.amount0,
-    amount1: minted.amount1,
-    token0Decimals: refreshedPool.token0.decimals,
-    token1Decimals: refreshedPool.token1.decimals,
-    price0In1: refreshedPrice0In1,
+  const positionNetValueIn1 = calcPositionNetValueIn1({
+    pool: refreshedPool.pool,
+    liquidity: updatedPosition.liquidity,
+    tickLower: updatedPosition.tickLower,
+    tickUpper: updatedPosition.tickUpper,
   });
 
   const principal0 = decreaseReceipt ? parseEventAmounts(decreaseReceipt).amount0 : BigNumber.from(0);
@@ -428,58 +449,62 @@ export async function mintNewPosition(
   }
 
   let swapReceipt: ContractReceipt | null = null;
-  if (balance0 > targetAmount0) {
-    const excess0 = balance0 - targetAmount0;
-    const amountIn = toBigNumber(excess0, poolContext.token0.decimals);
-    const quotedOut: BigNumber = await swapRouter.callStatic.exactInputSingle({
-      tokenIn: poolContext.token0.address,
-      tokenOut: poolContext.token1.address,
-      fee: poolContext.fee,
-      recipient: owner,
-      deadline,
-      amountIn,
-      amountOutMinimum: 0,
-      sqrtPriceLimitX96: 0,
-    });
-    const amountOutMin = quotedOut.mul(10_000 - settings.slippageToleranceBps).div(10_000);
-
-    console.log(`   - Swap ${excess0.toFixed(6)} ${poolContext.token0.symbol} -> ${poolContext.token1.symbol}`);
-    await ensureAllowance(token0Contract, owner, swapRouter.address, amountIn);
-    swapReceipt = await swapExactInputSingle({
-      router: swapRouter,
-      tokenIn: poolContext.token0.address,
-      tokenOut: poolContext.token1.address,
-      fee: poolContext.fee,
-      recipient: owner,
-      amountIn,
-      amountOutMinimum: amountOutMin,
-      deadline,
-    });
-  } else if (balance1 > targetAmount1) {
-    const excess1 = balance1 - targetAmount1;
-    const amountIn = toBigNumber(excess1, poolContext.token1.decimals);
-    const quotedOut: BigNumber = await swapRouter.callStatic.exactInputSingle({
+  const deficit0 = Math.max(0, targetAmount0 - balance0);
+  const deficit1 = Math.max(0, targetAmount1 - balance1);
+  if (deficit0 > 0) {
+    const amountOut = toBigNumber(deficit0, poolContext.token0.decimals);
+    const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
       tokenIn: poolContext.token1.address,
       tokenOut: poolContext.token0.address,
       fee: poolContext.fee,
       recipient: owner,
       deadline,
-      amountIn,
-      amountOutMinimum: 0,
+      amountOut,
+      amountInMaximum: ethers.constants.MaxUint256,
       sqrtPriceLimitX96: 0,
     });
-    const amountOutMin = quotedOut.mul(10_000 - settings.slippageToleranceBps).div(10_000);
+    const amountInMaximum = quotedIn.mul(10_000 + settings.slippageToleranceBps).div(10_000);
 
-    console.log(`   - Swap ${excess1.toFixed(6)} ${poolContext.token1.symbol} -> ${poolContext.token0.symbol}`);
-    await ensureAllowance(token1Contract, owner, swapRouter.address, amountIn);
-    swapReceipt = await swapExactInputSingle({
+    console.log(
+      `   - Swap for ${deficit0.toFixed(6)} ${poolContext.token0.symbol} using ${poolContext.token1.symbol}`
+    );
+    await ensureAllowance(token1Contract, owner, swapRouter.address, amountInMaximum);
+    swapReceipt = await swapExactOutputSingle({
       router: swapRouter,
       tokenIn: poolContext.token1.address,
       tokenOut: poolContext.token0.address,
       fee: poolContext.fee,
       recipient: owner,
-      amountIn,
-      amountOutMinimum: amountOutMin,
+      amountOut,
+      amountInMaximum,
+      deadline,
+    });
+  } else if (deficit1 > 0) {
+    const amountOut = toBigNumber(deficit1, poolContext.token1.decimals);
+    const quotedIn: BigNumber = await swapRouter.callStatic.exactOutputSingle({
+      tokenIn: poolContext.token0.address,
+      tokenOut: poolContext.token1.address,
+      fee: poolContext.fee,
+      recipient: owner,
+      deadline,
+      amountOut,
+      amountInMaximum: ethers.constants.MaxUint256,
+      sqrtPriceLimitX96: 0,
+    });
+    const amountInMaximum = quotedIn.mul(10_000 + settings.slippageToleranceBps).div(10_000);
+
+    console.log(
+      `   - Swap for ${deficit1.toFixed(6)} ${poolContext.token1.symbol} using ${poolContext.token0.symbol}`
+    );
+    await ensureAllowance(token0Contract, owner, swapRouter.address, amountInMaximum);
+    swapReceipt = await swapExactOutputSingle({
+      router: swapRouter,
+      tokenIn: poolContext.token0.address,
+      tokenOut: poolContext.token1.address,
+      fee: poolContext.fee,
+      recipient: owner,
+      amountOut,
+      amountInMaximum,
       deadline,
     });
   } else {
@@ -545,12 +570,11 @@ export async function mintNewPosition(
   const mintTxHash = receipt.transactionHash;
   const mintedTokenId = minted.tokenId ?? settings.tokenId;
   const updatedPosition = await nfpm.positions(mintedTokenId);
-  const positionNetValueIn1 = calcNetValueIn1({
-    amount0: minted.amount0,
-    amount1: minted.amount1,
-    token0Decimals: refreshedPool.token0.decimals,
-    token1Decimals: refreshedPool.token1.decimals,
-    price0In1: refreshedPrice0In1,
+  const positionNetValueIn1 = calcPositionNetValueIn1({
+    pool: refreshedPool.pool,
+    liquidity: updatedPosition.liquidity,
+    tickLower: updatedPosition.tickLower,
+    tickUpper: updatedPosition.tickUpper,
   });
 
   const gasCosts: BigNumber[] = [];
