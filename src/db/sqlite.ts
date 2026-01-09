@@ -42,6 +42,13 @@ export function initDb(filePath: string): SqliteDb {
         gas_cost_native TEXT,
         gas_cost_in_1 REAL,
         swap_fee_in_1 REAL,
+        config_tick_range REAL,
+        config_rebalance_delay_sec REAL,
+        config_slippage_bps REAL,
+        config_stop_loss_percent REAL,
+        config_max_gas_price_gwei REAL,
+        config_target_total_token1 REAL,
+        config_stop_after_auto_close INTEGER,
         rebalance_reason TEXT,
         mint_tx_hash TEXT,
         close_tx_hash TEXT,
@@ -69,6 +76,13 @@ export function initDb(filePath: string): SqliteDb {
           ensureColumn(db, 'positions', 'closed_at', 'TEXT'),
           ensureColumn(db, 'positions', 'close_reason', 'TEXT'),
           ensureColumn(db, 'positions', 'swap_fee_in_1', 'REAL'),
+          ensureColumn(db, 'positions', 'config_tick_range', 'REAL'),
+          ensureColumn(db, 'positions', 'config_rebalance_delay_sec', 'REAL'),
+          ensureColumn(db, 'positions', 'config_slippage_bps', 'REAL'),
+          ensureColumn(db, 'positions', 'config_stop_loss_percent', 'REAL'),
+          ensureColumn(db, 'positions', 'config_max_gas_price_gwei', 'REAL'),
+          ensureColumn(db, 'positions', 'config_target_total_token1', 'REAL'),
+          ensureColumn(db, 'positions', 'config_stop_after_auto_close', 'INTEGER'),
         ])
           .then(() => resolve())
           .catch(reject);

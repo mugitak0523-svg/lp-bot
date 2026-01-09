@@ -169,6 +169,16 @@ h1 {
   cursor: pointer;
 }
 
+.history-table .icon-btn {
+  width: 28px;
+  height: 28px;
+  color: #b91c1c;
+}
+
+.history-table .icon-btn:hover {
+  background: #fee2e2;
+}
+
 .icon {
   font-size: 0.85rem;
 }

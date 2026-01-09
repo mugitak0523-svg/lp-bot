@@ -10,7 +10,13 @@ import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/inter
 import PoolABI from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json';
 
 import { getConfig, getLogs, getSnapshot, updateConfig } from '../state/store';
-import { deletePositionsByTokenIds, getLatestActivePosition, getLatestPosition, listPositions } from '../db/positions';
+import {
+  deletePositionsByTokenIds,
+  getLatestActivePosition,
+  getLatestPosition,
+  listPositions,
+  updateActivePositionConfig,
+} from '../db/positions';
 import { getDb } from '../db/sqlite';
 import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
@@ -175,17 +181,29 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     }
   });
 
-  app.post('/config', (req, res) => {
+  app.post('/config', async (req, res) => {
     const body = req.body ?? {};
-    const next = updateConfig({
-      tickRange: typeof body.tickRange === 'number' ? body.tickRange : undefined,
-      rebalanceDelaySec: typeof body.rebalanceDelaySec === 'number' ? body.rebalanceDelaySec : undefined,
-      slippageBps: typeof body.slippageBps === 'number' ? body.slippageBps : undefined,
-      stopLossPercent: typeof body.stopLossPercent === 'number' ? body.stopLossPercent : undefined,
-      maxGasPriceGwei: typeof body.maxGasPriceGwei === 'number' ? body.maxGasPriceGwei : undefined,
-      targetTotalToken1: typeof body.targetTotalToken1 === 'number' ? body.targetTotalToken1 : undefined,
-      stopAfterAutoClose: typeof body.stopAfterAutoClose === 'boolean' ? body.stopAfterAutoClose : undefined,
-    });
+    const updates: Record<string, unknown> = {};
+    if (typeof body.tickRange === 'number') updates.tickRange = body.tickRange;
+    if (typeof body.rebalanceDelaySec === 'number') updates.rebalanceDelaySec = body.rebalanceDelaySec;
+    if (typeof body.slippageBps === 'number') updates.slippageBps = body.slippageBps;
+    if (typeof body.stopLossPercent === 'number') updates.stopLossPercent = body.stopLossPercent;
+    if (typeof body.maxGasPriceGwei === 'number') updates.maxGasPriceGwei = body.maxGasPriceGwei;
+    if (typeof body.targetTotalToken1 === 'number') updates.targetTotalToken1 = body.targetTotalToken1;
+    if (typeof body.stopAfterAutoClose === 'boolean') updates.stopAfterAutoClose = body.stopAfterAutoClose;
+    const next = updateConfig(updates);
+    const active = await getLatestActivePosition(db);
+    if (active) {
+      await updateActivePositionConfig(db, active.tokenId, {
+        configTickRange: next.tickRange,
+        configRebalanceDelaySec: next.rebalanceDelaySec,
+        configSlippageBps: next.slippageBps,
+        configStopLossPercent: next.stopLossPercent,
+        configMaxGasPriceGwei: next.maxGasPriceGwei,
+        configTargetTotalToken1: next.targetTotalToken1,
+        configStopAfterAutoClose: next.stopAfterAutoClose ? 1 : 0,
+      });
+    }
     res.json(next);
   });
 

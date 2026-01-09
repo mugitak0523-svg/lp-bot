@@ -168,8 +168,8 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
   const fees0 = collected.amount0.gt(principal0) ? collected.amount0.sub(principal0) : BigNumber.from(0);
   const fees1 = collected.amount1.gt(principal1) ? collected.amount1.sub(principal1) : BigNumber.from(0);
   const closedNetValueIn1 = calcNetValueIn1({
-    amount0: collected.amount0,
-    amount1: collected.amount1,
+    amount0: principal0,
+    amount1: principal1,
     token0Decimals: poolContext.token0.decimals,
     token1Decimals: poolContext.token1.decimals,
     price0In1,
@@ -420,8 +420,8 @@ export async function runRebalance(
   const fees0 = collected.amount0.gt(principal0) ? collected.amount0.sub(principal0) : BigNumber.from(0);
   const fees1 = collected.amount1.gt(principal1) ? collected.amount1.sub(principal1) : BigNumber.from(0);
   const closedNetValueIn1 = calcNetValueIn1({
-    amount0: collected.amount0,
-    amount1: collected.amount1,
+    amount0: principal0,
+    amount1: principal1,
     token0Decimals: poolContext.token0.decimals,
     token1Decimals: poolContext.token1.decimals,
     price0In1,

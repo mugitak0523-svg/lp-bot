@@ -15,7 +15,7 @@ import {
 } from './db/positions';
 import { awaitDbReady, initDb } from './db/sqlite';
 import { loadSettings } from './config/settings';
-import { getConfig, MonitorSnapshot, setSnapshot } from './state/store';
+import { clearSnapshot, getConfig, MonitorSnapshot, setSnapshot } from './state/store';
 import { sendDiscordMessage } from './utils/discord';
 import { createHttpProvider } from './utils/provider';
 
@@ -37,6 +37,7 @@ const state = {
 
 function toPositionRecord(result: RebalanceResult) {
   const now = new Date().toISOString();
+  const config = getConfig();
   return {
     tokenId: result.tokenId,
     poolAddress: result.poolAddress,
@@ -59,6 +60,13 @@ function toPositionRecord(result: RebalanceResult) {
     gasCostNative: result.gasCostNative,
     gasCostIn1: result.gasCostIn1,
     swapFeeIn1: result.swapFeeIn1,
+    configTickRange: config.tickRange,
+    configRebalanceDelaySec: config.rebalanceDelaySec,
+    configSlippageBps: config.slippageBps,
+    configStopLossPercent: config.stopLossPercent,
+    configMaxGasPriceGwei: config.maxGasPriceGwei,
+    configTargetTotalToken1: config.targetTotalToken1,
+    configStopAfterAutoClose: config.stopAfterAutoClose ? 1 : 0,
     rebalanceReason: result.reason,
     mintTxHash: result.mintTxHash,
     closeTxHash: undefined,
@@ -372,6 +380,7 @@ async function maybeStopMonitor(): Promise<void> {
     state.monitorController = null;
     state.monitorTokenId = null;
     state.monitoring = false;
+    clearSnapshot();
     console.log('No active position. Monitor stopped.');
   }
 }

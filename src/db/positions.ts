@@ -22,6 +22,13 @@ export type PositionRecord = {
   gasCostNative?: string;
   gasCostIn1?: number;
   swapFeeIn1?: number;
+  configTickRange?: number;
+  configRebalanceDelaySec?: number;
+  configSlippageBps?: number;
+  configStopLossPercent?: number;
+  configMaxGasPriceGwei?: number;
+  configTargetTotalToken1?: number;
+  configStopAfterAutoClose?: number;
   rebalanceReason?: string;
   mintTxHash?: string;
   closeTxHash?: string;
@@ -46,10 +53,13 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       liquidity, amount0, amount1,
       price0_in_1, net_value_in_1,
       fees0, fees1, gas_cost_native, gas_cost_in_1, swap_fee_in_1,
+      config_tick_range, config_rebalance_delay_sec, config_slippage_bps,
+      config_stop_loss_percent, config_max_gas_price_gwei, config_target_total_token1,
+      config_stop_after_auto_close,
       rebalance_reason, mint_tx_hash, close_tx_hash, close_reason,
       closed_net_value_in_1, realized_fees_in_1, realized_pnl_in_1, closed_at,
       status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.tokenId,
       record.poolAddress,
@@ -72,6 +82,13 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       record.gasCostNative ?? null,
       record.gasCostIn1 ?? null,
       record.swapFeeIn1 ?? null,
+      record.configTickRange ?? null,
+      record.configRebalanceDelaySec ?? null,
+      record.configSlippageBps ?? null,
+      record.configStopLossPercent ?? null,
+      record.configMaxGasPriceGwei ?? null,
+      record.configTargetTotalToken1 ?? null,
+      record.configStopAfterAutoClose ?? null,
       record.rebalanceReason ?? null,
       record.mintTxHash ?? null,
       record.closeTxHash ?? null,
@@ -186,6 +203,13 @@ export async function listPositions(db: SqliteDb, limit = 50): Promise<PositionR
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
       swap_fee_in_1 AS swapFeeIn1,
+      config_tick_range AS configTickRange,
+      config_rebalance_delay_sec AS configRebalanceDelaySec,
+      config_slippage_bps AS configSlippageBps,
+      config_stop_loss_percent AS configStopLossPercent,
+      config_max_gas_price_gwei AS configMaxGasPriceGwei,
+      config_target_total_token1 AS configTargetTotalToken1,
+      config_stop_after_auto_close AS configStopAfterAutoClose,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -219,6 +243,13 @@ export async function getLatestPosition(db: SqliteDb): Promise<PositionRecord | 
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
       swap_fee_in_1 AS swapFeeIn1,
+      config_tick_range AS configTickRange,
+      config_rebalance_delay_sec AS configRebalanceDelaySec,
+      config_slippage_bps AS configSlippageBps,
+      config_stop_loss_percent AS configStopLossPercent,
+      config_max_gas_price_gwei AS configMaxGasPriceGwei,
+      config_target_total_token1 AS configTargetTotalToken1,
+      config_stop_after_auto_close AS configStopAfterAutoClose,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -251,6 +282,13 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
       swap_fee_in_1 AS swapFeeIn1,
+      config_tick_range AS configTickRange,
+      config_rebalance_delay_sec AS configRebalanceDelaySec,
+      config_slippage_bps AS configSlippageBps,
+      config_stop_loss_percent AS configStopLossPercent,
+      config_max_gas_price_gwei AS configMaxGasPriceGwei,
+      config_target_total_token1 AS configTargetTotalToken1,
+      config_stop_after_auto_close AS configStopAfterAutoClose,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -272,4 +310,51 @@ export async function deletePositionsByTokenIds(db: SqliteDb, tokenIds: string[]
   const placeholders = tokenIds.map(() => '?').join(',');
   const result = await run(db, `DELETE FROM positions WHERE token_id IN (${placeholders})`, tokenIds);
   return result.changes ?? 0;
+}
+
+export type PositionConfigUpdate = {
+  configTickRange?: number | null;
+  configRebalanceDelaySec?: number | null;
+  configSlippageBps?: number | null;
+  configStopLossPercent?: number | null;
+  configMaxGasPriceGwei?: number | null;
+  configTargetTotalToken1?: number | null;
+  configStopAfterAutoClose?: number | null;
+};
+
+export async function updateActivePositionConfig(
+  db: SqliteDb,
+  tokenId: string,
+  config: PositionConfigUpdate
+): Promise<void> {
+  const now = new Date().toISOString();
+  await run(
+    db,
+    `UPDATE positions
+     SET config_tick_range = ?,
+         config_rebalance_delay_sec = ?,
+         config_slippage_bps = ?,
+         config_stop_loss_percent = ?,
+         config_max_gas_price_gwei = ?,
+         config_target_total_token1 = ?,
+         config_stop_after_auto_close = ?,
+         updated_at = ?
+     WHERE id = (
+       SELECT id FROM positions
+       WHERE token_id = ? AND status = 'active'
+       ORDER BY id DESC
+       LIMIT 1
+     )`,
+    [
+      config.configTickRange ?? null,
+      config.configRebalanceDelaySec ?? null,
+      config.configSlippageBps ?? null,
+      config.configStopLossPercent ?? null,
+      config.configMaxGasPriceGwei ?? null,
+      config.configTargetTotalToken1 ?? null,
+      config.configStopAfterAutoClose ?? null,
+      now,
+      tokenId,
+    ]
+  );
 }
