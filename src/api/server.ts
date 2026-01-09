@@ -2,10 +2,18 @@ import express from 'express';
 import https from 'https';
 import path from 'path';
 import { URL } from 'url';
+import { ethers } from 'ethers';
+import { Pool } from '@uniswap/v3-sdk';
+import { Token } from '@uniswap/sdk-core';
+
+import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/interfaces/IERC20Metadata.sol/IERC20Metadata.json';
+import PoolABI from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json';
 
 import { getConfig, getLogs, getSnapshot, updateConfig } from '../state/store';
 import { deletePositionsByTokenIds, getLatestActivePosition, getLatestPosition, listPositions } from '../db/positions';
 import { getDb } from '../db/sqlite';
+import { loadSettings } from '../config/settings';
+import { createHttpProvider } from '../utils/provider';
 
 export type ApiActions = {
   rebalance?: () => Promise<void>;
@@ -104,6 +112,69 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     res.json(getLogs(Number.isFinite(limit) ? limit : 50));
   });
 
+  app.get('/wallet/balances', async (_req, res) => {
+    const ownerAddressEnv = process.env.OWNER_ADDRESS ?? '';
+    const privateKey = process.env.PRIVATE_KEY ?? '';
+    const ownerAddress = ownerAddressEnv || (privateKey ? new ethers.Wallet(privateKey).address : '');
+    if (!ownerAddress) {
+      res.status(400).json({ error: 'OWNER_ADDRESS or PRIVATE_KEY required' });
+      return;
+    }
+    try {
+      const settings = loadSettings();
+      const provider = createHttpProvider(settings.rpcUrl);
+      const pool = new ethers.Contract(settings.poolAddress, PoolABI.abi, provider);
+      const [token0Address, token1Address, slot0, liquidity, fee] = await Promise.all([
+        pool.token0(),
+        pool.token1(),
+        pool.slot0(),
+        pool.liquidity(),
+        pool.fee(),
+      ]);
+      const token0 = new ethers.Contract(token0Address, IERC20_METADATA_ABI.abi, provider);
+      const token1 = new ethers.Contract(token1Address, IERC20_METADATA_ABI.abi, provider);
+      const [dec0, dec1, sym0, sym1, bal0, bal1, nativeBal] = await Promise.all([
+        token0.decimals(),
+        token1.decimals(),
+        token0.symbol(),
+        token1.symbol(),
+        token0.balanceOf(ownerAddress),
+        token1.balanceOf(ownerAddress),
+        provider.getBalance(ownerAddress),
+      ]);
+      const balance0 = Number(ethers.utils.formatUnits(bal0, dec0));
+      const balance1 = Number(ethers.utils.formatUnits(bal1, dec1));
+      const nativeBalance = Number(ethers.utils.formatEther(nativeBal));
+      let prices = await fetchCoingeckoPrices(token0Address, token1Address);
+      if (!prices.token0Usd && !prices.token1Usd && !prices.nativeUsd) {
+        prices = {
+          ...(await fetchPoolFallbackPrices(
+            settings.chainId,
+            token0Address,
+            token1Address,
+            dec0,
+            dec1,
+            sym0,
+            sym1,
+            fee,
+            slot0,
+            liquidity
+          )),
+        };
+      }
+      res.json({
+        owner: ownerAddress,
+        token0: { address: token0Address, symbol: sym0, decimals: dec0, balance: balance0, usdPrice: prices.token0Usd },
+        token1: { address: token1Address, symbol: sym1, decimals: dec1, balance: balance1, usdPrice: prices.token1Usd },
+        native: { symbol: 'ETH', balance: nativeBalance, usdPrice: prices.nativeUsd },
+        priceSource: prices.source,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.post('/config', (req, res) => {
     const body = req.body ?? {};
     const next = updateConfig({
@@ -189,6 +260,133 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
   app.listen(port, () => {
     console.log(`API server listening on :${port}`);
   });
+}
+
+type PriceResult = {
+  token0Usd: number | null;
+  token1Usd: number | null;
+  nativeUsd: number | null;
+  source: string | null;
+};
+
+async function fetchCoingeckoPrices(token0: string, token1: string): Promise<PriceResult> {
+  try {
+    const [token0Usd, token1Usd] = await Promise.all([
+      fetchTokenUsd(token0),
+      fetchTokenUsd(token1),
+    ]);
+    const nativeData = await fetchJsonGet(
+      'https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd'
+    );
+    const nativeUsd = nativeData?.ethereum?.usd ?? null;
+    return { token0Usd, token1Usd, nativeUsd, source: 'coingecko' };
+  } catch (error) {
+    return { token0Usd: null, token1Usd: null, nativeUsd: null, source: null };
+  }
+}
+
+async function fetchTokenUsd(address: string): Promise<number | null> {
+  try {
+    const tokenUrl =
+      `https://api.coingecko.com/api/v3/simple/token_price/arbitrum-one?contract_addresses=${address.toLowerCase()}&vs_currencies=usd`;
+    const tokenData = await fetchJsonGet(tokenUrl);
+    return tokenData?.[address.toLowerCase()]?.usd ?? null;
+  } catch (error) {
+    return null;
+  }
+}
+
+function fetchJsonGet(urlString: string): Promise<any> {
+  const url = new URL(urlString);
+  const apiKey = process.env.COINGECKO_API_KEY ?? '';
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        method: 'GET',
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        headers: apiKey ? { 'x-cg-demo-api-key': apiKey } : undefined,
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+            reject(new Error(`HTTP ${res.statusCode ?? 'unknown'}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(data));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function isUsdStable(symbol: string): boolean {
+  const normalized = symbol.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  return normalized.includes('USD') || normalized === 'DAI';
+}
+
+function isWethLike(symbol: string): boolean {
+  const normalized = symbol.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  return normalized === 'WETH' || normalized === 'ETH';
+}
+
+async function fetchPoolFallbackPrices(
+  chainId: number,
+  token0Address: string,
+  token1Address: string,
+  dec0: number,
+  dec1: number,
+  sym0: string,
+  sym1: string,
+  fee: number,
+  slot0: { sqrtPriceX96: ethers.BigNumber; tick: number },
+  liquidity: ethers.BigNumber
+): Promise<PriceResult> {
+  try {
+    const token0 = new Token(chainId, token0Address, dec0, sym0);
+    const token1 = new Token(chainId, token1Address, dec1, sym1);
+    const pool = new Pool(
+      token0,
+      token1,
+      fee,
+      slot0.sqrtPriceX96.toString(),
+      liquidity.toString(),
+      slot0.tick
+    );
+    const price0In1 = Number(pool.token0Price.toSignificant(8));
+    const token1Stable = isUsdStable(sym1);
+    const token0Stable = isUsdStable(sym0);
+    const token0Weth = isWethLike(sym0);
+    const token1Weth = isWethLike(sym1);
+
+    let token0Usd: number | null = null;
+    let token1Usd: number | null = null;
+    let nativeUsd: number | null = null;
+
+    if (token1Stable) {
+      token0Usd = price0In1;
+      token1Usd = 1;
+      if (token0Weth) nativeUsd = token0Usd;
+    } else if (token0Stable && price0In1 > 0) {
+      token0Usd = 1;
+      token1Usd = 1 / price0In1;
+      if (token1Weth) nativeUsd = token1Usd;
+    }
+
+    return { token0Usd, token1Usd, nativeUsd, source: 'pool' };
+  } catch (error) {
+    return { token0Usd: null, token1Usd: null, nativeUsd: null, source: null };
+  }
 }
 
 function getSubgraphUrl(chainId: number): string | null {

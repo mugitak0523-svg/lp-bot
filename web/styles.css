@@ -379,6 +379,12 @@ h1 {
   align-items: start;
 }
 
+.grid-right {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
 .grid-left {
   display: grid;
   gap: 20px;
@@ -466,6 +472,10 @@ h1 {
   .grid-charts {
     grid-template-columns: 1fr;
   }
+
+  .grid-right {
+    order: 2;
+  }
 }
 
 @media (max-width: 1200px) and (min-width: 1101px) {
@@ -506,6 +516,184 @@ h1 {
 
 .value {
   font-weight: 600;
+}
+
+.mono {
+  font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+  word-break: break-all;
+}
+
+.wallet-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  background: #ffffff;
+}
+
+.wallet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.wallet-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wallet-chain {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chain-logo {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.wallet-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--ink);
+}
+
+.wallet-address {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.wallet-chip {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  background: #f8f9fb;
+}
+
+.wallet-total {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.wallet-total-label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.wallet-total-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+
+.wallet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wallet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.wallet-token {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.wallet-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: #111827;
+  font-size: 0.72rem;
+  position: relative;
+  background: #ffffff;
+  border: none;
+}
+
+.wallet-icon.token0 {
+  background: #ffffff;
+}
+
+.wallet-icon.token1 {
+  background: #ffffff;
+}
+
+.wallet-icon.native {
+  background: #ffffff;
+}
+
+.token-logo {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.token-fallback {
+  display: none;
+}
+
+.token-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+}
+
+.wallet-symbol {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.wallet-sub {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.wallet-amount {
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 0.9rem;
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.wallet-usd {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.wallet-qty {
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 
 .status-active {
