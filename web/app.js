@@ -28,7 +28,8 @@ const feeRatioFill1 = document.getElementById('fee-ratio-fill-1');
 const feeRatioText = document.getElementById('fee-ratio-text');
 const createdPriceEl = document.getElementById('created-price');
 const holdTimeEl = document.getElementById('hold-time');
-const rebalanceEtaEl = document.getElementById('rebalance-eta');
+const rebalanceEtaRemainingEl = document.getElementById('rebalance-eta-remaining');
+const rebalanceEtaTotalEl = document.getElementById('rebalance-eta-total');
 const createdAtEl = document.getElementById('created-at');
 const historyBodyEl = document.getElementById('history-body');
 const historyEmptyEl = document.getElementById('history-empty');
@@ -49,6 +50,7 @@ const walletToken0AmtEl = document.getElementById('wallet-token0-amount');
 const walletToken1AmtEl = document.getElementById('wallet-token1-amount');
 const walletNativeAmtEl = document.getElementById('wallet-native-amount');
 const walletTotalUsdEl = document.getElementById('wallet-total-usd');
+const walletTotalWithPositionEl = document.getElementById('wallet-total-with-position');
 const walletToken0Name = document.getElementById('wallet-token0-name');
 const walletToken1Name = document.getElementById('wallet-token1-name');
 const walletNativeName = document.getElementById('wallet-native-name');
@@ -121,6 +123,10 @@ let lastProfitLabel = null;
 let lastPrice0In1 = null;
 let lastSymbol0 = null;
 let lastSymbol1 = null;
+let lastActiveTokenId = null;
+let lastPositionUsd = null;
+let lastRebalanceRemainingLabel = null;
+let lastRebalanceTotalLabel = null;
 
 function setProfitHeader() {
   if (!profitTotalEl) return;
@@ -171,6 +177,11 @@ function formatUsd(value) {
   return `$${formatNumber(value, 2)}`;
 }
 
+function isUsdSymbol(symbol) {
+  if (!symbol) return false;
+  return symbol.toUpperCase().includes('USD');
+}
+
 function formatAddress(address) {
   if (!address || address.length < 10) return address || '-';
   return `${address.slice(0, 6)}...${address.slice(-5)}`;
@@ -198,6 +209,33 @@ function formatDuration(ms) {
   if (days > 0) return `${days}d ${pad2(hours)}h ${pad2(minutes)}m`;
   if (hours > 0) return `${pad2(hours)}h ${pad2(minutes)}m`;
   return `${pad2(minutes)}m ${pad2(seconds)}s`;
+}
+
+function formatRebalanceRemaining(rawRemainingSec) {
+  if (rawRemainingSec == null) return '-';
+  if (rawRemainingSec <= 0) {
+    return `-${formatDuration(Math.abs(rawRemainingSec) * 1000)}`;
+  }
+  return formatDuration(rawRemainingSec * 1000);
+}
+
+function formatRebalanceTotal(totalSec) {
+  return totalSec > 0 ? `/ ${formatDuration(totalSec * 1000)}` : '/ -';
+}
+
+function setRebalanceLabels(remainingLabel, totalLabel) {
+  if (rebalanceEtaRemainingEl) {
+    if (remainingLabel !== lastRebalanceRemainingLabel || rebalanceEtaRemainingEl.textContent !== remainingLabel) {
+      lastRebalanceRemainingLabel = remainingLabel;
+      rebalanceEtaRemainingEl.textContent = remainingLabel;
+    }
+  }
+  if (rebalanceEtaTotalEl) {
+    if (totalLabel !== lastRebalanceTotalLabel || rebalanceEtaTotalEl.textContent !== totalLabel) {
+      lastRebalanceTotalLabel = totalLabel;
+      rebalanceEtaTotalEl.textContent = totalLabel;
+    }
+  }
 }
 
 function computeProfitValue(row) {
@@ -417,6 +455,7 @@ async function loadStatus() {
     lastPrice0In1 = null;
     lastSymbol0 = null;
     lastSymbol1 = null;
+    lastPositionUsd = null;
     ratioFill0.style.width = '50%';
     ratioFill1.style.width = '50%';
     ratioText.textContent = '-';
@@ -425,7 +464,7 @@ async function loadStatus() {
     feeRatioText.textContent = '-';
     createdPriceEl.textContent = '-';
     holdTimeEl.textContent = '-';
-    rebalanceEtaEl.textContent = '-';
+    setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
     createdAtEl.textContent = '-';
     if (chartProfitEl) {
       chartProfitEl.textContent = '-';
@@ -451,6 +490,7 @@ async function loadStatus() {
   lastPrice0In1 = Number.isFinite(data.price0In1) ? data.price0In1 : null;
   lastSymbol0 = data.symbol0 ?? null;
   lastSymbol1 = data.symbol1 ?? null;
+  lastPositionUsd = isUsdSymbol(lastSymbol1) ? data.netValueIn1 ?? null : null;
   netValueEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.symbol1}`;
   const pnlText = `${data.pnl >= 0 ? '+' : ''}${formatNumber(data.pnl, 2)} (${formatNumber(data.pnlPct, 1)}%)`;
   netPnlEl.textContent = pnlText;
@@ -483,11 +523,11 @@ async function loadStatus() {
     }
     const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
     const delaySec = rebalanceDelaySecValue ?? 0;
-    const remaining = Math.max(0, delaySec - elapsed);
-    rebalanceEtaEl.textContent = remaining <= 0 ? '0-' : formatDuration(remaining * 1000);
+    const rawRemaining = delaySec - elapsed;
+    setRebalanceLabels(formatRebalanceRemaining(rawRemaining), formatRebalanceTotal(delaySec));
   } else {
     outOfRangeStartMs = null;
-    rebalanceEtaEl.textContent = '-';
+    setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
   }
 
   const gasIn1 = activeGasIn1 ?? 0;
@@ -676,6 +716,13 @@ async function loadWallet() {
 
     const totalUsd = [token0Usd, token1Usd, nativeUsd].filter((val) => Number.isFinite(val)).reduce((acc, val) => acc + val, 0);
     walletTotalUsdEl.textContent = totalUsd > 0 ? formatUsd(totalUsd) : '$-';
+    if (walletTotalWithPositionEl) {
+      if (Number.isFinite(lastPositionUsd) && (totalUsd > 0 || lastPositionUsd > 0)) {
+        walletTotalWithPositionEl.textContent = `(${formatUsd(totalUsd + lastPositionUsd)})`;
+      } else {
+        walletTotalWithPositionEl.textContent = '(-)';
+      }
+    }
 
     walletToken0AmtEl.textContent =
       balance0 != null ? `${formatNumber(balance0, 6)} ${token0Symbol}` : '-';
@@ -689,6 +736,7 @@ async function loadWallet() {
     walletToken1UsdEl.textContent = '-';
     walletNativeUsdEl.textContent = '-';
     if (walletTotalUsdEl) walletTotalUsdEl.textContent = '-';
+    if (walletTotalWithPositionEl) walletTotalWithPositionEl.textContent = '-';
     walletToken0AmtEl.textContent = '-';
     walletToken1AmtEl.textContent = '-';
     walletNativeAmtEl.textContent = '-';
@@ -768,9 +816,17 @@ async function loadActivePosition() {
     activeSymbol1 = null;
     activeSizeIn1 = null;
     activeCreatedAtMs = null;
+    lastActiveTokenId = null;
+    outOfRangeStartMs = null;
+    lastOutOfRange = false;
     createBtn.disabled = false;
     createHint.textContent = '';
     return;
+  }
+  if (data.tokenId && data.tokenId !== lastActiveTokenId) {
+    lastActiveTokenId = data.tokenId;
+    outOfRangeStartMs = null;
+    lastOutOfRange = false;
   }
   activeTokenEl.textContent = data.tokenId;
   activeRangeEl.textContent = `tick ${data.tickLower} ~ ${data.tickUpper}`;
@@ -896,8 +952,10 @@ async function boot() {
     if (lastOutOfRange && outOfRangeStartMs != null) {
       const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
       const delaySec = rebalanceDelaySecValue ?? 0;
-      const remaining = Math.max(0, delaySec - elapsed);
-      rebalanceEtaEl.textContent = remaining <= 0 ? '0-' : formatDuration(remaining * 1000);
+      const rawRemaining = delaySec - elapsed;
+      setRebalanceLabels(formatRebalanceRemaining(rawRemaining), formatRebalanceTotal(delaySec));
+    } else {
+      setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
     }
   }, 1000);
   setInterval(() => {
