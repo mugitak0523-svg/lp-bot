@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>LP Bot Dashboard</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -15,6 +16,7 @@
   <body>
     <header class="header-bar">
       <div class="header-left">
+        <img class="header-logo" src="./favicon.svg" alt="LP Bot" />
         <p class="eyebrow">LP BOT</p>
       </div>
       <div class="header-right">
@@ -128,6 +130,7 @@
             <p class="stat-sub"><span class="stat-value inline" id="rebalance-eta">-</span></p>
           </article>
             </div>
+          <div class="grid-charts">
             <article class="card chart-card" id="card-chart">
               <div class="chart-header">
                 <h2 class="card-title">Pool Price</h2>
@@ -138,7 +141,15 @@
               </div>
               <p class="stat-sub" id="chart-meta">-</p>
             </article>
+            <article class="card log-card" id="card-logs">
+              <div class="chart-header">
+                <h2 class="card-title">Monitor Logs</h2>
+                <span class="stat-sub" id="log-status">-</span>
+              </div>
+              <pre class="log-stream" id="monitor-logs">-</pre>
+            </article>
           </div>
+        </div>
 
           <article class="card" id="card-actions">
             <h2 class="card-title">Actions</h2>

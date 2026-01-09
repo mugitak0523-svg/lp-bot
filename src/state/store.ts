@@ -29,11 +29,23 @@ export type MonitorSnapshot = {
 export type BotState = {
   snapshot: MonitorSnapshot | null;
   config: RuntimeConfig;
+  logs: LogEntry[];
+  logSeq: number;
 };
+
+export type LogEntry = {
+  id: number;
+  timestamp: string;
+  message: string;
+};
+
+const LOG_LIMIT = 200;
 
 const state: BotState = {
   snapshot: null,
   config: loadRuntimeConfig(),
+  logs: [],
+  logSeq: 0,
 };
 
 export function getSnapshot(): MonitorSnapshot | null {
@@ -51,4 +63,17 @@ export function getConfig(): RuntimeConfig {
 export function updateConfig(next: Partial<RuntimeConfig>): RuntimeConfig {
   state.config = { ...state.config, ...next };
   return state.config;
+}
+
+export function addLog(message: string, timestamp = new Date().toISOString()): void {
+  state.logSeq += 1;
+  state.logs.push({ id: state.logSeq, timestamp, message });
+  if (state.logs.length > LOG_LIMIT) {
+    state.logs.splice(0, state.logs.length - LOG_LIMIT);
+  }
+}
+
+export function getLogs(limit = 50): LogEntry[] {
+  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(200, limit)) : 50;
+  return state.logs.slice(-safeLimit);
 }
