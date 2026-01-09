@@ -28,7 +28,8 @@ const feeRatioFill1 = document.getElementById('fee-ratio-fill-1');
 const feeRatioText = document.getElementById('fee-ratio-text');
 const createdPriceEl = document.getElementById('created-price');
 const holdTimeEl = document.getElementById('hold-time');
-const rebalanceEtaEl = document.getElementById('rebalance-eta');
+const rebalanceEtaRemainingEl = document.getElementById('rebalance-eta-remaining');
+const rebalanceEtaTotalEl = document.getElementById('rebalance-eta-total');
 const createdAtEl = document.getElementById('created-at');
 const historyBodyEl = document.getElementById('history-body');
 const historyEmptyEl = document.getElementById('history-empty');
@@ -41,6 +42,58 @@ const chartMetaEl = document.getElementById('chart-meta');
 let chartProfitEl = document.getElementById('chart-profit');
 const logStreamEl = document.getElementById('monitor-logs');
 const logStatusEl = document.getElementById('log-status');
+const walletAddressEl = document.getElementById('wallet-address');
+const walletToken0UsdEl = document.getElementById('wallet-token0-usd');
+const walletToken1UsdEl = document.getElementById('wallet-token1-usd');
+const walletNativeUsdEl = document.getElementById('wallet-native-usd');
+const walletToken0AmtEl = document.getElementById('wallet-token0-amount');
+const walletToken1AmtEl = document.getElementById('wallet-token1-amount');
+const walletNativeAmtEl = document.getElementById('wallet-native-amount');
+const walletTotalUsdEl = document.getElementById('wallet-total-usd');
+const walletTotalWithPositionEl = document.getElementById('wallet-total-with-position');
+const walletToken0Name = document.getElementById('wallet-token0-name');
+const walletToken1Name = document.getElementById('wallet-token1-name');
+const walletNativeName = document.getElementById('wallet-native-name');
+const walletToken0Sub = document.getElementById('wallet-token0-sub');
+const walletToken1Sub = document.getElementById('wallet-token1-sub');
+const walletNativeSub = document.getElementById('wallet-native-sub');
+const walletToken0Logo = document.getElementById('wallet-token0-logo');
+const walletToken1Logo = document.getElementById('wallet-token1-logo');
+const walletNativeLogo = document.getElementById('wallet-native-logo');
+const walletToken0Fallback = document.getElementById('wallet-token0-fallback');
+const walletToken1Fallback = document.getElementById('wallet-token1-fallback');
+const walletNativeFallback = document.getElementById('wallet-native-fallback');
+
+const TOKEN_LOGOS = {
+  eth: { id: 'token-eth', viewBox: '0 0 512 512' },
+  weth: { id: 'token-weth', viewBox: '0 0 70 70' },
+  usdc: { id: 'token-usdc', viewBox: '0 0 70 70' },
+};
+
+function resolveTokenLogo(symbol) {
+  if (!symbol) return null;
+  return TOKEN_LOGOS[symbol.toLowerCase()] ?? null;
+}
+
+function setTokenLogo(logoEl, fallbackEl, symbol) {
+  if (!logoEl || !fallbackEl) return;
+  const logo = resolveTokenLogo(symbol);
+  const useEl = logoEl.querySelector('use');
+  if (logo && useEl) {
+    logoEl.setAttribute('viewBox', logo.viewBox);
+    useEl.setAttribute('href', `#${logo.id}`);
+    logoEl.style.display = 'block';
+    fallbackEl.style.display = 'none';
+    fallbackEl.textContent = symbol ? symbol.slice(0, 2) : '-';
+    return;
+  }
+  if (useEl) {
+    useEl.removeAttribute('href');
+  }
+  logoEl.style.display = 'none';
+  fallbackEl.style.display = 'block';
+  fallbackEl.textContent = symbol ? symbol.slice(0, 2) : '-';
+}
 const configForm = document.getElementById('config-form');
 const rebalanceBtn = document.getElementById('btn-rebalance');
 const closeBtn = document.getElementById('btn-close');
@@ -67,6 +120,13 @@ let winRateCache = null;
 let winRateLastFetch = 0;
 let winRateFetching = false;
 let lastProfitLabel = null;
+let lastPrice0In1 = null;
+let lastSymbol0 = null;
+let lastSymbol1 = null;
+let lastActiveTokenId = null;
+let lastPositionUsd = null;
+let lastRebalanceRemainingLabel = null;
+let lastRebalanceTotalLabel = null;
 
 function setProfitHeader() {
   if (!profitTotalEl) return;
@@ -112,6 +172,21 @@ function formatPercent(value) {
   return formatSigned(value, digits);
 }
 
+function formatUsd(value) {
+  if (!Number.isFinite(value)) return '-';
+  return `$${formatNumber(value, 2)}`;
+}
+
+function isUsdSymbol(symbol) {
+  if (!symbol) return false;
+  return symbol.toUpperCase().includes('USD');
+}
+
+function formatAddress(address) {
+  if (!address || address.length < 10) return address || '-';
+  return `${address.slice(0, 6)}...${address.slice(-5)}`;
+}
+
 function updateProfitSub() {
   if (profitPctValue == null) {
     profitSubEl.textContent = '-';
@@ -134,6 +209,33 @@ function formatDuration(ms) {
   if (days > 0) return `${days}d ${pad2(hours)}h ${pad2(minutes)}m`;
   if (hours > 0) return `${pad2(hours)}h ${pad2(minutes)}m`;
   return `${pad2(minutes)}m ${pad2(seconds)}s`;
+}
+
+function formatRebalanceRemaining(rawRemainingSec) {
+  if (rawRemainingSec == null) return '-';
+  if (rawRemainingSec <= 0) {
+    return `-${formatDuration(Math.abs(rawRemainingSec) * 1000)}`;
+  }
+  return formatDuration(rawRemainingSec * 1000);
+}
+
+function formatRebalanceTotal(totalSec) {
+  return totalSec > 0 ? `/ ${formatDuration(totalSec * 1000)}` : '/ -';
+}
+
+function setRebalanceLabels(remainingLabel, totalLabel) {
+  if (rebalanceEtaRemainingEl) {
+    if (remainingLabel !== lastRebalanceRemainingLabel || rebalanceEtaRemainingEl.textContent !== remainingLabel) {
+      lastRebalanceRemainingLabel = remainingLabel;
+      rebalanceEtaRemainingEl.textContent = remainingLabel;
+    }
+  }
+  if (rebalanceEtaTotalEl) {
+    if (totalLabel !== lastRebalanceTotalLabel || rebalanceEtaTotalEl.textContent !== totalLabel) {
+      lastRebalanceTotalLabel = totalLabel;
+      rebalanceEtaTotalEl.textContent = totalLabel;
+    }
+  }
 }
 
 function computeProfitValue(row) {
@@ -350,6 +452,10 @@ async function loadStatus() {
     statusChip.className = 'status-pill';
     netPnlEl.textContent = '';
     netPnlEl.classList.add('hidden');
+    lastPrice0In1 = null;
+    lastSymbol0 = null;
+    lastSymbol1 = null;
+    lastPositionUsd = null;
     ratioFill0.style.width = '50%';
     ratioFill1.style.width = '50%';
     ratioText.textContent = '-';
@@ -358,7 +464,7 @@ async function loadStatus() {
     feeRatioText.textContent = '-';
     createdPriceEl.textContent = '-';
     holdTimeEl.textContent = '-';
-    rebalanceEtaEl.textContent = '-';
+    setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
     createdAtEl.textContent = '-';
     if (chartProfitEl) {
       chartProfitEl.textContent = '-';
@@ -381,6 +487,10 @@ async function loadStatus() {
   statusChip.textContent = data.status || 'active';
   statusChip.className = `status-pill ${inRange ? 'ok' : 'warn'}`;
   priceEl.textContent = `1 ${data.symbol0} = ${formatNumber(data.price0In1, 4)} ${data.symbol1}`;
+  lastPrice0In1 = Number.isFinite(data.price0In1) ? data.price0In1 : null;
+  lastSymbol0 = data.symbol0 ?? null;
+  lastSymbol1 = data.symbol1 ?? null;
+  lastPositionUsd = isUsdSymbol(lastSymbol1) ? data.netValueIn1 ?? null : null;
   netValueEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.symbol1}`;
   const pnlText = `${data.pnl >= 0 ? '+' : ''}${formatNumber(data.pnl, 2)} (${formatNumber(data.pnlPct, 1)}%)`;
   netPnlEl.textContent = pnlText;
@@ -413,11 +523,11 @@ async function loadStatus() {
     }
     const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
     const delaySec = rebalanceDelaySecValue ?? 0;
-    const remaining = Math.max(0, delaySec - elapsed);
-    rebalanceEtaEl.textContent = remaining <= 0 ? '0-' : formatDuration(remaining * 1000);
+    const rawRemaining = delaySec - elapsed;
+    setRebalanceLabels(formatRebalanceRemaining(rawRemaining), formatRebalanceTotal(delaySec));
   } else {
     outOfRangeStartMs = null;
-    rebalanceEtaEl.textContent = '-';
+    setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
   }
 
   const gasIn1 = activeGasIn1 ?? 0;
@@ -549,6 +659,99 @@ async function loadLogs() {
   }
 }
 
+async function loadWallet() {
+  if (!walletAddressEl) return;
+  try {
+    const data = await fetchJson('/wallet/balances');
+    walletAddressEl.textContent = formatAddress(data.owner);
+    const token0Symbol = data.token0?.symbol ?? 'Token0';
+    const token1Symbol = data.token1?.symbol ?? 'Token1';
+    const nativeSymbol = data.native?.symbol ?? 'ETH';
+    if (walletToken0Name) walletToken0Name.textContent = token0Symbol;
+    if (walletToken1Name) walletToken1Name.textContent = token1Symbol;
+    if (walletNativeName) walletNativeName.textContent = nativeSymbol;
+    if (walletToken0Sub) walletToken0Sub.textContent = 'Token';
+    if (walletToken1Sub) walletToken1Sub.textContent = 'Token';
+    if (walletNativeSub) walletNativeSub.textContent = 'Native';
+    setTokenLogo(walletToken0Logo, walletToken0Fallback, token0Symbol);
+    setTokenLogo(walletToken1Logo, walletToken1Fallback, token1Symbol);
+    setTokenLogo(walletNativeLogo, walletNativeFallback, nativeSymbol);
+    const balance0 = data.token0?.balance;
+    const balance1 = data.token1?.balance;
+    const nativeBalance = data.native?.balance;
+    const usdSymbol = lastSymbol1 && lastSymbol1.toUpperCase().includes('USD') ? lastSymbol1 : null;
+    const canPriceToken0 =
+      usdSymbol && lastSymbol0 && token0Symbol.toLowerCase() === lastSymbol0.toLowerCase() && lastPrice0In1;
+    const canPriceToken1 =
+      usdSymbol && token1Symbol.toLowerCase() === usdSymbol.toLowerCase();
+    const canPriceNative =
+      usdSymbol && lastSymbol0 && ['eth', 'weth'].includes(lastSymbol0.toLowerCase()) && lastPrice0In1;
+
+    const apiToken0Usd = data.token0?.usdPrice;
+    const apiToken1Usd = data.token1?.usdPrice;
+    const apiNativeUsd = data.native?.usdPrice;
+
+    const token0Usd =
+      Number.isFinite(apiToken0Usd) && Number.isFinite(balance0)
+        ? balance0 * apiToken0Usd
+        : canPriceToken0 && Number.isFinite(balance0)
+          ? balance0 * (lastPrice0In1 ?? 0)
+          : null;
+    const token1Usd =
+      Number.isFinite(apiToken1Usd) && Number.isFinite(balance1)
+        ? balance1 * apiToken1Usd
+        : canPriceToken1 && Number.isFinite(balance1)
+          ? balance1
+          : null;
+    const nativeUsd =
+      Number.isFinite(apiNativeUsd) && Number.isFinite(nativeBalance)
+        ? nativeBalance * apiNativeUsd
+        : canPriceNative && Number.isFinite(nativeBalance)
+          ? nativeBalance * (lastPrice0In1 ?? 0)
+          : null;
+
+    walletToken0UsdEl.textContent = token0Usd != null ? formatUsd(token0Usd) : '$-';
+    walletToken1UsdEl.textContent = token1Usd != null ? formatUsd(token1Usd) : '$-';
+    walletNativeUsdEl.textContent = nativeUsd != null ? formatUsd(nativeUsd) : '$-';
+
+    const totalUsd = [token0Usd, token1Usd, nativeUsd].filter((val) => Number.isFinite(val)).reduce((acc, val) => acc + val, 0);
+    walletTotalUsdEl.textContent = totalUsd > 0 ? formatUsd(totalUsd) : '$-';
+    if (walletTotalWithPositionEl) {
+      if (Number.isFinite(lastPositionUsd) && (totalUsd > 0 || lastPositionUsd > 0)) {
+        walletTotalWithPositionEl.textContent = `(${formatUsd(totalUsd + lastPositionUsd)})`;
+      } else {
+        walletTotalWithPositionEl.textContent = '(-)';
+      }
+    }
+
+    walletToken0AmtEl.textContent =
+      balance0 != null ? `${formatNumber(balance0, 6)} ${token0Symbol}` : '-';
+    walletToken1AmtEl.textContent =
+      balance1 != null ? `${formatNumber(balance1, 6)} ${token1Symbol}` : '-';
+    walletNativeAmtEl.textContent =
+      nativeBalance != null ? `${formatNumber(nativeBalance, 6)} ${nativeSymbol}` : '-';
+  } catch (error) {
+    walletAddressEl.textContent = '-';
+    walletToken0UsdEl.textContent = '-';
+    walletToken1UsdEl.textContent = '-';
+    walletNativeUsdEl.textContent = '-';
+    if (walletTotalUsdEl) walletTotalUsdEl.textContent = '-';
+    if (walletTotalWithPositionEl) walletTotalWithPositionEl.textContent = '-';
+    walletToken0AmtEl.textContent = '-';
+    walletToken1AmtEl.textContent = '-';
+    walletNativeAmtEl.textContent = '-';
+    if (walletToken0Name) walletToken0Name.textContent = '-';
+    if (walletToken1Name) walletToken1Name.textContent = '-';
+    if (walletNativeName) walletNativeName.textContent = '-';
+    if (walletToken0Sub) walletToken0Sub.textContent = '-';
+    if (walletToken1Sub) walletToken1Sub.textContent = '-';
+    if (walletNativeSub) walletNativeSub.textContent = '-';
+    setTokenLogo(walletToken0Logo, walletToken0Fallback, '-');
+    setTokenLogo(walletToken1Logo, walletToken1Fallback, '-');
+    setTokenLogo(walletNativeLogo, walletNativeFallback, '-');
+  }
+}
+
 function renderPriceChart(points, meta) {
   if (!chartSvg) return;
   chartSvg.innerHTML = '';
@@ -613,9 +816,17 @@ async function loadActivePosition() {
     activeSymbol1 = null;
     activeSizeIn1 = null;
     activeCreatedAtMs = null;
+    lastActiveTokenId = null;
+    outOfRangeStartMs = null;
+    lastOutOfRange = false;
     createBtn.disabled = false;
     createHint.textContent = '';
     return;
+  }
+  if (data.tokenId && data.tokenId !== lastActiveTokenId) {
+    lastActiveTokenId = data.tokenId;
+    outOfRangeStartMs = null;
+    lastOutOfRange = false;
   }
   activeTokenEl.textContent = data.tokenId;
   activeRangeEl.textContent = `tick ${data.tickLower} ~ ${data.tickUpper}`;
@@ -711,6 +922,7 @@ async function boot() {
   }
   loadChart().catch((error) => console.error(error));
   loadLogs().catch((error) => console.error(error));
+  loadWallet().catch((error) => console.error(error));
   navItems.forEach((item) => {
     item.addEventListener('click', () => {
       const viewName = item.dataset.view;
@@ -722,6 +934,9 @@ async function boot() {
     loadStatus().catch((error) => console.error(error));
     loadActivePosition().catch((error) => console.error(error));
   }, 4000);
+  setInterval(() => {
+    loadWallet().catch((error) => console.error(error));
+  }, 10000);
   setInterval(() => {
     loadChart().catch((error) => console.error(error));
   }, 30000);
@@ -737,8 +952,10 @@ async function boot() {
     if (lastOutOfRange && outOfRangeStartMs != null) {
       const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
       const delaySec = rebalanceDelaySecValue ?? 0;
-      const remaining = Math.max(0, delaySec - elapsed);
-      rebalanceEtaEl.textContent = remaining <= 0 ? '0-' : formatDuration(remaining * 1000);
+      const rawRemaining = delaySec - elapsed;
+      setRebalanceLabels(formatRebalanceRemaining(rawRemaining), formatRebalanceTotal(delaySec));
+    } else {
+      setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
     }
   }, 1000);
   setInterval(() => {
