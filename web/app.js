@@ -590,10 +590,18 @@ async function loadConfig() {
     stopAutoCloseBtn.classList.toggle('active', stopAfterAutoCloseValue);
     stopAutoCloseBtn.textContent = stopAfterAutoCloseValue ? 'Auto Close Only (ON)' : 'Auto Close Only (OFF)';
   }
-  Object.entries(config).forEach(([key, value]) => {
-    const field = configForm.elements.namedItem(key);
-    if (field) field.value = value;
-  });
+  if (!configForm) return;
+  const setField = (name, value) => {
+    const field = configForm.elements.namedItem(name);
+    if (!field || value == null) return;
+    field.value = String(value);
+  };
+  setField('tickRange', config.tickRange);
+  setField('rebalanceDelaySec', config.rebalanceDelaySec);
+  setField('slippageBps', config.slippageBps);
+  setField('stopLossPercent', config.stopLossPercent);
+  setField('maxGasPriceGwei', config.maxGasPriceGwei);
+  setField('targetTotalToken1', config.targetTotalToken1);
 }
 
 async function loadHistory() {
