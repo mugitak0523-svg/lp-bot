@@ -9,6 +9,7 @@ import { loadPoolContext } from '../uniswap/pool';
 import { getPositionManager, buildMintCall, collectAll, decreaseLiquidity, parseEventAmounts } from '../uniswap/positions';
 import { getSwapRouter, swapExactInputSingle, swapExactOutputSingle } from '../uniswap/swap';
 import { NFPM_ADDRESS } from '../uniswap/addresses';
+import PoolABI from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json';
 
 function toFixedAmount(value: number, decimals: number): string {
   return value.toFixed(decimals);
@@ -53,6 +54,43 @@ function calcPositionNetValueIn1(params: {
   return amount0 * price0In1 + amount1;
 }
 
+function calcSwapFeeIn1(params: {
+  receipt: ContractReceipt;
+  poolAddress: string;
+  tokenIn: string;
+  token0: { address: string; decimals: number };
+  token1: { address: string; decimals: number };
+  price0In1: number;
+  fee: number;
+}): number {
+  const iface = new ethers.utils.Interface(PoolABI.abi);
+  const poolAddress = params.poolAddress.toLowerCase();
+  const tokenInLower = params.tokenIn.toLowerCase();
+  for (const entry of params.receipt.logs) {
+    if (entry.address.toLowerCase() !== poolAddress) continue;
+    try {
+      const parsed = iface.parseLog(entry);
+      if (parsed.name !== 'Swap') continue;
+      const amount0 = parsed.args.amount0 as BigNumber;
+      const amount1 = parsed.args.amount1 as BigNumber;
+      const amountIn =
+        tokenInLower === params.token0.address.toLowerCase()
+          ? amount0.abs()
+          : amount1.abs();
+      const feeAmount = amountIn.mul(params.fee).div(1_000_000);
+      if (tokenInLower === params.token0.address.toLowerCase()) {
+        const fee0 = parseFloat(ethers.utils.formatUnits(feeAmount, params.token0.decimals));
+        return fee0 * params.price0In1;
+      }
+      const fee1 = parseFloat(ethers.utils.formatUnits(feeAmount, params.token1.decimals));
+      return fee1;
+    } catch {
+      continue;
+    }
+  }
+  return 0;
+}
+
 export type CloseResult = {
   closeTxHash: string | null;
   collected0: string;
@@ -85,6 +123,7 @@ export type RebalanceResult = {
   fees1: string;
   gasCostNative: string;
   gasCostIn1: number;
+  swapFeeIn1: number;
   mintTxHash: string;
   reason: string;
   closeTxHash: string;
@@ -219,6 +258,7 @@ export async function runRebalance(
   }
 
   let swapReceipt: ContractReceipt | null = null;
+  let swapFeeIn1 = 0;
   if (balance0 < targetAmount0) {
     const deficit0 = targetAmount0 - balance0;
     const amountOut = toBigNumber(deficit0, poolContext.token0.decimals);
@@ -248,6 +288,15 @@ export async function runRebalance(
       amountInMaximum,
       deadline,
     });
+    swapFeeIn1 = calcSwapFeeIn1({
+      receipt: swapReceipt,
+      poolAddress: settings.poolAddress,
+      tokenIn: poolContext.token1.address,
+      token0: poolContext.token0,
+      token1: poolContext.token1,
+      price0In1,
+      fee: poolContext.fee,
+    });
   } else if (balance0 > targetAmount0) {
     const excess0 = balance0 - targetAmount0;
     const amountIn = toBigNumber(excess0, poolContext.token0.decimals);
@@ -274,6 +323,15 @@ export async function runRebalance(
       amountIn,
       amountOutMinimum: amountOutMin,
       deadline,
+    });
+    swapFeeIn1 = calcSwapFeeIn1({
+      receipt: swapReceipt,
+      poolAddress: settings.poolAddress,
+      tokenIn: poolContext.token0.address,
+      token0: poolContext.token0,
+      token1: poolContext.token1,
+      price0In1,
+      fee: poolContext.fee,
     });
   } else {
     console.log('   - No swap needed.');
@@ -405,6 +463,7 @@ export async function runRebalance(
     fees1: fees1.toString(),
     gasCostNative,
     gasCostIn1,
+    swapFeeIn1,
     mintTxHash,
     reason,
     closeTxHash: collectReceipt.transactionHash,
@@ -458,6 +517,7 @@ export async function mintNewPosition(
   }
 
   let swapReceipt: ContractReceipt | null = null;
+  let swapFeeIn1 = 0;
   if (balance0 < targetAmount0) {
     const deficit0 = targetAmount0 - balance0;
     const amountOut = toBigNumber(deficit0, poolContext.token0.decimals);
@@ -487,6 +547,15 @@ export async function mintNewPosition(
       amountInMaximum,
       deadline,
     });
+    swapFeeIn1 = calcSwapFeeIn1({
+      receipt: swapReceipt,
+      poolAddress: settings.poolAddress,
+      tokenIn: poolContext.token1.address,
+      token0: poolContext.token0,
+      token1: poolContext.token1,
+      price0In1,
+      fee: poolContext.fee,
+    });
   } else if (balance0 > targetAmount0) {
     const excess0 = balance0 - targetAmount0;
     const amountIn = toBigNumber(excess0, poolContext.token0.decimals);
@@ -513,6 +582,15 @@ export async function mintNewPosition(
       amountIn,
       amountOutMinimum: amountOutMin,
       deadline,
+    });
+    swapFeeIn1 = calcSwapFeeIn1({
+      receipt: swapReceipt,
+      poolAddress: settings.poolAddress,
+      tokenIn: poolContext.token0.address,
+      token0: poolContext.token0,
+      token1: poolContext.token1,
+      price0In1,
+      fee: poolContext.fee,
     });
   } else {
     console.log('   - No swap needed.');
@@ -626,6 +704,7 @@ export async function mintNewPosition(
     fees1: '0',
     gasCostNative,
     gasCostIn1,
+    swapFeeIn1,
     mintTxHash,
     reason,
     closeTxHash: '',

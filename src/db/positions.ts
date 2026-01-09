@@ -21,6 +21,7 @@ export type PositionRecord = {
   fees1?: string;
   gasCostNative?: string;
   gasCostIn1?: number;
+  swapFeeIn1?: number;
   rebalanceReason?: string;
   mintTxHash?: string;
   closeTxHash?: string;
@@ -44,11 +45,11 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       fee, tick_lower, tick_upper,
       liquidity, amount0, amount1,
       price0_in_1, net_value_in_1,
-      fees0, fees1, gas_cost_native, gas_cost_in_1,
+      fees0, fees1, gas_cost_native, gas_cost_in_1, swap_fee_in_1,
       rebalance_reason, mint_tx_hash, close_tx_hash, close_reason,
       closed_net_value_in_1, realized_fees_in_1, realized_pnl_in_1, closed_at,
       status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.tokenId,
       record.poolAddress,
@@ -70,6 +71,7 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       record.fees1 ?? null,
       record.gasCostNative ?? null,
       record.gasCostIn1 ?? null,
+      record.swapFeeIn1 ?? null,
       record.rebalanceReason ?? null,
       record.mintTxHash ?? null,
       record.closeTxHash ?? null,
@@ -183,6 +185,7 @@ export async function listPositions(db: SqliteDb, limit = 50): Promise<PositionR
       liquidity, amount0, amount1,
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
+      swap_fee_in_1 AS swapFeeIn1,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -215,6 +218,7 @@ export async function getLatestPosition(db: SqliteDb): Promise<PositionRecord | 
       liquidity, amount0, amount1,
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
+      swap_fee_in_1 AS swapFeeIn1,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -246,6 +250,7 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
       liquidity, amount0, amount1,
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
+      swap_fee_in_1 AS swapFeeIn1,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,

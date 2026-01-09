@@ -7,6 +7,7 @@ const activeSizeEl = document.getElementById('active-size');
 const activeStopLossEl = document.getElementById('active-stop-loss');
 const activePriceEl = document.getElementById('active-price');
 const activeGasEl = document.getElementById('active-gas');
+const activeSwapFeeEl = document.getElementById('active-swap-fee');
 const activeStatusEl = document.getElementById('active-status');
 const netValueEl = document.getElementById('net-value');
 const netPnlEl = document.getElementById('net-pnl');
@@ -17,6 +18,7 @@ const profitDetailEl = document.getElementById('profit-detail');
 const profitRatioPnl = document.getElementById('profit-ratio-pnl');
 const profitRatioFees = document.getElementById('profit-ratio-fees');
 const profitRatioGas = document.getElementById('profit-ratio-gas');
+const profitRatioSwap = document.getElementById('profit-ratio-swap');
 const profitRatioText = document.getElementById('profit-ratio-text');
 const ratioFill0 = document.getElementById('ratio-fill');
 const ratioFill1 = document.getElementById('ratio-fill-1');
@@ -46,15 +48,18 @@ const navItems = document.querySelectorAll('.nav-item');
 
 const API_BASE = window.location.origin;
 let activeGasIn1 = null;
+let activeSwapFeeIn1 = null;
 let activeSymbol1 = null;
 let activeSizeIn1 = null;
 let activeCreatedAtMs = null;
 let stopLossPercentValue = null;
+let rebalanceDelaySecValue = null;
 let profitPctValue = null;
 let aprPctValue = null;
 let profitToggleApr = false;
 let lastRebalanceRemainingSec = null;
 let lastStatusTimeMs = null;
+let outOfRangeStartMs = null;
 let lastOutOfRange = false;
 let winRateCache = null;
 let winRateLastFetch = 0;
@@ -148,6 +153,27 @@ function setWinRateFromClosed(closed) {
   winRateCache = total > 0 ? (wins / total) * 100 : null;
 }
 
+function computeHistoryApr(closed) {
+  const rows = closed.filter((row) => row.closedAt);
+  if (rows.length < 2) return null;
+  const times = rows.map((row) => new Date(row.closedAt).getTime()).filter((t) => Number.isFinite(t));
+  if (times.length < 2) return null;
+  const start = Math.min(...times);
+  const end = Math.max(...times);
+  const elapsedSeconds = Math.max(1, (end - start) / 1000);
+  const totalProfit = rows
+    .map((row) => computeProfitValue(row))
+    .filter((value) => value != null)
+    .reduce((acc, value) => acc + value, 0);
+  const totalSize = rows
+    .map((row) => Number(row.netValueIn1))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .reduce((acc, value) => acc + value, 0);
+  if (!totalSize) return null;
+  const annualized = (totalProfit / totalSize) * (365 * 24 * 60 * 60 / elapsedSeconds) * 100;
+  return Number.isFinite(annualized) ? annualized : null;
+}
+
 async function refreshWinRateIfNeeded() {
   if (winRateFetching) return;
   if (Date.now() - winRateLastFetch < 60000) return;
@@ -209,8 +235,10 @@ function updateHistoryCharts(closed) {
       .map((row) => computeProfitValue(row))
       .filter((value) => value != null)
       .reduce((acc, value) => acc + value, 0);
-    const winRateSuffix = winRateCache == null ? '' : ` (${formatNumber(winRateCache, 1)}%)`;
-    historyTotalProfitEl.textContent = `Total ${formatSigned(totalProfit, 4)}${winRateSuffix}`;
+    const aprValue = computeHistoryApr(closed);
+    const winRateText = winRateCache == null ? '-' : `${formatNumber(winRateCache, 1)}%`;
+    const aprText = aprValue == null ? '-' : `${formatNumber(aprValue, 1)}%`;
+    historyTotalProfitEl.textContent = `Total ${formatSigned(totalProfit, 4)} (Win : ${winRateText} / APR : ${aprText})`;
   }
 
   const trend = buildProfitTrend(closed);
@@ -221,8 +249,10 @@ function updateHistoryCharts(closed) {
   const todayValues = todayBuckets.map((value) => Number(value.toFixed(4)));
   if (historyTodayTotalEl) {
     const todayTotal = todayBuckets.reduce((acc, value) => acc + value, 0);
-    const winRateSuffix = winRateCache == null ? '' : ` (${formatNumber(winRateCache, 1)}%)`;
-    historyTodayTotalEl.textContent = `Total ${formatSigned(todayTotal, 4)}${winRateSuffix}`;
+    const aprValue = computeHistoryApr(closed);
+    const winRateText = winRateCache == null ? '-' : `${formatNumber(winRateCache, 1)}%`;
+    const aprText = aprValue == null ? '-' : `${formatNumber(aprValue, 1)}%`;
+    historyTodayTotalEl.textContent = `Total ${formatSigned(todayTotal, 4)} (Win : ${winRateText} / APR : ${aprText})`;
   }
   const hourLabels = Array.from({ length: 24 }, (_, idx) => `${idx}h`);
 
@@ -373,16 +403,24 @@ async function loadStatus() {
     typeof data.rebalanceRemainingSec === 'number' ? data.rebalanceRemainingSec : null;
   const parsedTime = data.timestamp ? Date.parse(data.timestamp) : NaN;
   lastStatusTimeMs = Number.isFinite(parsedTime) ? parsedTime : Date.now();
-  if (lastOutOfRange && lastRebalanceRemainingSec != null) {
-    rebalanceEtaEl.textContent =
-      lastRebalanceRemainingSec <= 0 ? '0-' : formatDuration(lastRebalanceRemainingSec * 1000);
+  if (lastOutOfRange) {
+    if (outOfRangeStartMs == null) {
+      const baseSec = lastRebalanceRemainingSec ?? 0;
+      outOfRangeStartMs = lastStatusTimeMs - baseSec * 1000;
+    }
+    const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
+    const delaySec = rebalanceDelaySecValue ?? 0;
+    const remaining = Math.max(0, delaySec - elapsed);
+    rebalanceEtaEl.textContent = remaining <= 0 ? '0-' : formatDuration(remaining * 1000);
   } else {
+    outOfRangeStartMs = null;
     rebalanceEtaEl.textContent = '-';
   }
 
   const gasIn1 = activeGasIn1 ?? 0;
+  const swapFeeIn1 = activeSwapFeeIn1 ?? 0;
   const symbol1 = activeSymbol1 ?? data.symbol1 ?? '';
-  const profitTotal = (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0) - gasIn1;
+  const profitTotal = (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0) - gasIn1 - swapFeeIn1;
   if (chartProfitEl) {
     chartProfitEl.textContent = `Total Profit ${formatSigned(profitTotal, 4)} ${symbol1}`.trim();
   }
@@ -405,15 +443,20 @@ async function loadStatus() {
   updateProfitSub();
   const pnlValue = data.pnl ?? 0;
   const feeValue = data.feeTotalIn1 ?? 0;
-  profitDetailEl.textContent = `PnL ${formatNumber(pnlValue, 2)} + Fees ${formatNumber(feeValue, 2)} - Gas ${formatNumber(gasIn1, 4)}`;
-  const totalAbs = Math.abs(pnlValue) + Math.abs(feeValue) + Math.abs(gasIn1);
+  profitDetailEl.textContent = `PnL ${formatNumber(pnlValue, 2)} + Fees ${formatNumber(feeValue, 2)} - Gas ${formatNumber(gasIn1, 4)} - Swap ${formatNumber(swapFeeIn1, 4)}`;
+  const swapValue = swapFeeIn1 ?? 0;
+  const totalAbs = Math.abs(pnlValue) + Math.abs(feeValue) + Math.abs(gasIn1) + Math.abs(swapValue);
   const pnlRatio = totalAbs > 0 ? (Math.abs(pnlValue) / totalAbs) * 100 : 0;
   const feeRatio = totalAbs > 0 ? (Math.abs(feeValue) / totalAbs) * 100 : 0;
   const gasRatio = totalAbs > 0 ? (Math.abs(gasIn1) / totalAbs) * 100 : 0;
+  const swapRatio = totalAbs > 0 ? (Math.abs(swapValue) / totalAbs) * 100 : 0;
   profitRatioPnl.style.width = `${pnlRatio}%`;
   profitRatioFees.style.width = `${feeRatio}%`;
   profitRatioGas.style.width = `${gasRatio}%`;
-  profitRatioText.textContent = `PnL ${formatNumber(pnlRatio, 2)}% / Fees ${formatNumber(feeRatio, 2)}% / Gas ${formatNumber(gasRatio, 2)}%`;
+  if (profitRatioSwap) {
+    profitRatioSwap.style.width = `${swapRatio}%`;
+  }
+  profitRatioText.textContent = `PnL ${formatNumber(pnlRatio, 2)}% / Fees ${formatNumber(feeRatio, 2)}% / Gas ${formatNumber(gasRatio, 2)}% / Swap ${formatNumber(swapRatio, 2)}%`;
   profitTotalEl.classList.toggle('profit-positive', profitTotal > 0);
   profitTotalEl.classList.toggle('profit-negative', profitTotal < 0);
   profitSubEl.classList.toggle('profit-positive', profitTotal > 0);
@@ -424,6 +467,8 @@ async function loadConfig() {
   const config = await fetchJson('/config');
   stopLossPercentValue =
     typeof config.stopLossPercent === 'number' ? config.stopLossPercent : stopLossPercentValue;
+  rebalanceDelaySecValue =
+    typeof config.rebalanceDelaySec === 'number' ? config.rebalanceDelaySec : rebalanceDelaySecValue;
   Object.entries(config).forEach(([key, value]) => {
     const field = configForm.elements.namedItem(key);
     if (field) field.value = value;
@@ -531,8 +576,10 @@ async function loadActivePosition() {
     activeStopLossEl.textContent = '-';
     activePriceEl.textContent = '-';
     activeGasEl.textContent = '-';
+    if (activeSwapFeeEl) activeSwapFeeEl.textContent = '-';
     activeStatusEl.textContent = 'no active position';
     activeGasIn1 = null;
+    activeSwapFeeIn1 = null;
     activeSymbol1 = null;
     activeSizeIn1 = null;
     activeCreatedAtMs = null;
@@ -574,8 +621,13 @@ async function loadActivePosition() {
   activePriceEl.textContent = `1 ${data.token0Symbol} = ${formatNumber(data.price0In1, 4)} ${data.token1Symbol}`;
   activeGasEl.textContent =
     data.gasCostIn1 != null ? `${formatNumber(data.gasCostIn1, 4)} ${data.token1Symbol}` : '-';
+  if (activeSwapFeeEl) {
+    activeSwapFeeEl.textContent =
+      data.swapFeeIn1 != null ? `${formatNumber(data.swapFeeIn1, 4)} ${data.token1Symbol}` : '-';
+  }
   activeStatusEl.textContent = data.status;
   activeGasIn1 = data.gasCostIn1 ?? null;
+  activeSwapFeeIn1 = data.swapFeeIn1 ?? null;
   activeSymbol1 = data.token1Symbol ?? null;
   activeCreatedAtMs = data.createdAt ? Date.parse(data.createdAt) : null;
   createdPriceEl.textContent = activePriceEl.textContent;
@@ -647,9 +699,10 @@ async function boot() {
     } else {
       holdTimeEl.textContent = '-';
     }
-    if (lastOutOfRange && lastRebalanceRemainingSec != null && lastStatusTimeMs) {
-      const elapsed = Math.floor((Date.now() - lastStatusTimeMs) / 1000);
-      const remaining = Math.max(0, lastRebalanceRemainingSec - elapsed);
+    if (lastOutOfRange && outOfRangeStartMs != null) {
+      const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
+      const delaySec = rebalanceDelaySecValue ?? 0;
+      const remaining = Math.max(0, delaySec - elapsed);
       rebalanceEtaEl.textContent = remaining <= 0 ? '0-' : formatDuration(remaining * 1000);
     }
   }, 1000);

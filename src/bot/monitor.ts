@@ -115,12 +115,12 @@ export async function startMonitor(
       const value0In1 = amount0 * price0In1;
       const netValueIn1 = value0In1 + amount1;
 
-      if (state.initialNetValue === null) {
+      if (state.initialNetValue === null && posData.liquidity.gt(0)) {
         state.initialNetValue = netValueIn1;
       }
 
-      const pnl = netValueIn1 - (state.initialNetValue ?? 0);
-      const pnlPct = state.initialNetValue ? (pnl / state.initialNetValue) * 100 : 0;
+      const pnl = posData.liquidity.gt(0) ? netValueIn1 - (state.initialNetValue ?? 0) : 0;
+      const pnlPct = posData.liquidity.gt(0) && state.initialNetValue ? (pnl / state.initialNetValue) * 100 : 0;
 
       let feesText = '(fetching)';
       let fee0 = 0;
@@ -190,6 +190,7 @@ export async function startMonitor(
         fee1,
         feeTotalIn1,
         feeYieldPct: feeYield,
+        liquidity: posData.liquidity.toString(),
       });
     } catch (error) {
       console.error('Update Error:', error);

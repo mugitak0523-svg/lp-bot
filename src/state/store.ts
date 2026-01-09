@@ -23,6 +23,7 @@ export type MonitorSnapshot = {
   fee1: number;
   feeTotalIn1: number;
   feeYieldPct: number;
+  liquidity?: string;
 };
 
 export type BotState = {

@@ -58,6 +58,7 @@ function toPositionRecord(result: RebalanceResult) {
     fees1: result.fees1,
     gasCostNative: result.gasCostNative,
     gasCostIn1: result.gasCostIn1,
+    swapFeeIn1: result.swapFeeIn1,
     rebalanceReason: result.reason,
     mintTxHash: result.mintTxHash,
     closeTxHash: undefined,
@@ -79,7 +80,9 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
     }
   }
 
-  const outOfRange = snapshot.currentTick < snapshot.tickLower || snapshot.currentTick > snapshot.tickUpper;
+  const isLiquidityZero = snapshot.liquidity === '0';
+  const outOfRange =
+    !isLiquidityZero && (snapshot.currentTick < snapshot.tickLower || snapshot.currentTick > snapshot.tickUpper);
   if (outOfRange) {
     if (!state.outOfRangeSince) {
       state.outOfRangeSince = Date.now();
@@ -101,7 +104,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   });
 
   const stopLossLine = state.initialNetValue * (1 - config.stopLossPercent / 100);
-  if (!state.rebalancing && snapshot.netValueIn1 <= stopLossLine) {
+  if (!state.rebalancing && !isLiquidityZero && snapshot.netValueIn1 <= stopLossLine) {
     state.rebalancing = true;
     sendDiscordMessage(
       webhookUrl,
