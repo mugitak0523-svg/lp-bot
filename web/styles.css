@@ -441,7 +441,8 @@ h1 {
   font-size: 0.82rem;
   line-height: 1.4;
   white-space: pre-wrap;
-  overflow: hidden;
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 #price-chart {
