@@ -511,15 +511,15 @@ async function loadStatus() {
   feeRatioFill1.style.width = `${feeRatio1}%`;
   feeRatioText.textContent = `${data.symbol0} ${formatNumber(feeRatio0, 2)}% / ${data.symbol1} ${formatNumber(feeRatio1, 2)}%`;
 
+  const wasOutOfRange = lastOutOfRange;
   lastOutOfRange = Boolean(data.outOfRange);
   lastRebalanceRemainingSec =
     typeof data.rebalanceRemainingSec === 'number' ? data.rebalanceRemainingSec : null;
   const parsedTime = data.timestamp ? Date.parse(data.timestamp) : NaN;
   lastStatusTimeMs = Number.isFinite(parsedTime) ? parsedTime : Date.now();
   if (lastOutOfRange) {
-    if (outOfRangeStartMs == null) {
-      const baseSec = lastRebalanceRemainingSec ?? 0;
-      outOfRangeStartMs = lastStatusTimeMs - baseSec * 1000;
+    if (!wasOutOfRange || outOfRangeStartMs == null) {
+      outOfRangeStartMs = lastStatusTimeMs;
     }
     const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
     const delaySec = rebalanceDelaySecValue ?? 0;
