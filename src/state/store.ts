@@ -56,6 +56,10 @@ export function setSnapshot(snapshot: MonitorSnapshot): void {
   state.snapshot = snapshot;
 }
 
+export function clearSnapshot(): void {
+  state.snapshot = null;
+}
+
 export function getConfig(): RuntimeConfig {
   return state.config;
 }

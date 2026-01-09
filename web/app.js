@@ -201,6 +201,21 @@ function updateProfitSub() {
   profitSubEl.textContent = `(${formatPercent(profitPctValue)}%)`;
 }
 
+function applyConfigToForm(config) {
+  if (!configForm || !config) return;
+  const setField = (name, value) => {
+    const field = configForm.elements.namedItem(name);
+    if (!field || value == null) return;
+    field.value = String(value);
+  };
+  setField('tickRange', config.tickRange);
+  setField('rebalanceDelaySec', config.rebalanceDelaySec);
+  setField('slippageBps', config.slippageBps);
+  setField('stopLossPercent', config.stopLossPercent);
+  setField('maxGasPriceGwei', config.maxGasPriceGwei);
+  setField('targetTotalToken1', config.targetTotalToken1);
+}
+
 function formatDuration(ms) {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   const days = Math.floor(totalSeconds / 86400);
@@ -452,8 +467,10 @@ async function loadStatus() {
   if (data.status === 'no-data') {
     statusChip.textContent = 'no-data';
     statusChip.className = 'status-pill';
+    netValueEl.textContent = '-';
     netPnlEl.textContent = '';
     netPnlEl.classList.add('hidden');
+    feesEl.textContent = '-';
     lastPrice0In1 = null;
     lastSymbol0 = null;
     lastSymbol1 = null;
@@ -590,18 +607,7 @@ async function loadConfig() {
     stopAutoCloseBtn.classList.toggle('active', stopAfterAutoCloseValue);
     stopAutoCloseBtn.textContent = stopAfterAutoCloseValue ? 'Auto Close Only (ON)' : 'Auto Close Only (OFF)';
   }
-  if (!configForm) return;
-  const setField = (name, value) => {
-    const field = configForm.elements.namedItem(name);
-    if (!field || value == null) return;
-    field.value = String(value);
-  };
-  setField('tickRange', config.tickRange);
-  setField('rebalanceDelaySec', config.rebalanceDelaySec);
-  setField('slippageBps', config.slippageBps);
-  setField('stopLossPercent', config.stopLossPercent);
-  setField('maxGasPriceGwei', config.maxGasPriceGwei);
-  setField('targetTotalToken1', config.targetTotalToken1);
+  applyConfigToForm(config);
 }
 
 async function loadHistory() {
@@ -644,9 +650,34 @@ async function loadHistory() {
         <td class="history-profit ${profitClass}">${profitLabel}</td>
         <td>${closeReason}</td>
         <td>${closedAt}</td>
+        <td>
+          <button class="icon-btn delete-row" data-token-id="${tokenId}" title="Delete">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M9 7v-2h6v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M9 10v7M12 10v7M15 10v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <rect x="7" y="7" width="10" height="12" rx="2" stroke="currentColor" stroke-width="2"/>
+            </svg>
+          </button>
+        </td>
       </tr>`;
     })
     .join('');
+  historyBodyEl.querySelectorAll('.delete-row').forEach((btn) => {
+    btn.addEventListener('click', async (event) => {
+      const target = event.currentTarget;
+      const tokenId = target?.dataset?.tokenId;
+      if (!tokenId) return;
+      const ok = confirm(`Token ID ${tokenId} を削除しますか？`);
+      if (!ok) return;
+      await fetchJson('/positions/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tokenIds: [tokenId] }),
+      });
+      await loadHistory();
+    });
+  });
   updateHistoryCharts(closed);
 }
 
@@ -862,6 +893,28 @@ async function loadActivePosition() {
   const createdSize = Number(data.netValueIn1);
   activeSizeIn1 = Number.isFinite(createdSize) && createdSize > 0 ? createdSize : null;
   activeSizeEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.token1Symbol}`;
+  const positionConfig = {
+    tickRange: data.configTickRange,
+    rebalanceDelaySec: data.configRebalanceDelaySec,
+    slippageBps: data.configSlippageBps,
+    stopLossPercent: data.configStopLossPercent,
+    maxGasPriceGwei: data.configMaxGasPriceGwei,
+    targetTotalToken1: data.configTargetTotalToken1,
+  };
+  applyConfigToForm(positionConfig);
+  if (typeof data.configStopLossPercent === 'number') {
+    stopLossPercentValue = data.configStopLossPercent;
+  }
+  if (typeof data.configRebalanceDelaySec === 'number') {
+    rebalanceDelaySecValue = data.configRebalanceDelaySec;
+  }
+  if (data.configStopAfterAutoClose != null) {
+    stopAfterAutoCloseValue = Boolean(data.configStopAfterAutoClose);
+    if (stopAutoCloseBtn) {
+      stopAutoCloseBtn.classList.toggle('active', stopAfterAutoCloseValue);
+      stopAutoCloseBtn.textContent = stopAfterAutoCloseValue ? 'Auto Close Only (ON)' : 'Auto Close Only (OFF)';
+    }
+  }
   if (stopLossPercentValue == null) {
     const stopLossField = configForm.elements.namedItem('stopLossPercent');
     const stopLossInput = stopLossField ? Number(stopLossField.value) : NaN;
