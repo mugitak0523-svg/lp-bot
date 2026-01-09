@@ -1,0 +1,3 @@
+curl -X POST http://localhost:3000/positions/delete \
+  -H "Content-Type: application/json" \
+  -d '{"tokenIds":["5204880","5204870"]}'

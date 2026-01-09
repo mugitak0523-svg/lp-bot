@@ -156,11 +156,12 @@ export async function startMonitor(
       if (currentTick < tickLower) statusHeader = `OUT OF RANGE (LOW, ${sym0} 100%)`;
       else if (currentTick > tickUpper) statusHeader = `OUT OF RANGE (HIGH, ${sym1} 100%)`;
 
-      const timestamp = new Date().toLocaleTimeString();
+      const logTime = new Date().toLocaleTimeString();
+      const snapshotTime = new Date().toISOString();
       const ratio0 = netValueIn1 > 0 ? (value0In1 / netValueIn1) * 100 : 0;
       const ratio1 = netValueIn1 > 0 ? (amount1 / netValueIn1) * 100 : 0;
 
-      console.log(`\n[${timestamp}] ${trigger} | ${statusHeader}`);
+      console.log(`\n[${logTime}] ${trigger} | ${statusHeader}`);
       console.log(`Price : 1 ${sym0} = ${price0In1.toFixed(6)} ${sym1}`);
       console.log(`Range : tick ${tickLower} ~ ${tickUpper} (current ${currentTick})`);
       console.log(`Asset : ${sym0} ${ratio0.toFixed(0)}% / ${sym1} ${ratio1.toFixed(0)}%`);
@@ -169,7 +170,7 @@ export async function startMonitor(
       console.log(`Fees  : ${feesText}`);
 
       callbacks.onSnapshot?.({
-        timestamp,
+        timestamp: snapshotTime,
         trigger,
         status: statusHeader,
         symbol0: sym0,

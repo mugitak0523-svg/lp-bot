@@ -261,3 +261,10 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
      LIMIT 1`
   );
 }
+
+export async function deletePositionsByTokenIds(db: SqliteDb, tokenIds: string[]): Promise<number> {
+  if (tokenIds.length === 0) return 0;
+  const placeholders = tokenIds.map(() => '?').join(',');
+  const result = await run(db, `DELETE FROM positions WHERE token_id IN (${placeholders})`, tokenIds);
+  return result.changes ?? 0;
+}
