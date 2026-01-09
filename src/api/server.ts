@@ -184,6 +184,7 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       stopLossPercent: typeof body.stopLossPercent === 'number' ? body.stopLossPercent : undefined,
       maxGasPriceGwei: typeof body.maxGasPriceGwei === 'number' ? body.maxGasPriceGwei : undefined,
       targetTotalToken1: typeof body.targetTotalToken1 === 'number' ? body.targetTotalToken1 : undefined,
+      stopAfterAutoClose: typeof body.stopAfterAutoClose === 'boolean' ? body.stopAfterAutoClose : undefined,
     });
     res.json(next);
   });
