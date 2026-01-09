@@ -138,7 +138,8 @@ function computeProfitValue(row) {
   if (row.realizedPnlIn1 == null || row.realizedFeesIn1 == null || row.gasCostIn1 == null) {
     return null;
   }
-  return row.realizedPnlIn1 + row.realizedFeesIn1 - row.gasCostIn1;
+  const swapFee = typeof row.swapFeeIn1 === 'number' ? row.swapFeeIn1 : 0;
+  return row.realizedPnlIn1 + row.realizedFeesIn1 - row.gasCostIn1 - swapFee;
 }
 
 function setWinRateFromClosed(closed) {
@@ -495,10 +496,8 @@ async function loadHistory() {
       const fees = row.realizedFeesIn1 != null ? `${formatNumber(row.realizedFeesIn1, 4)} ${row.token1Symbol}` : '-';
       const pnl = row.realizedPnlIn1 != null ? `${formatSigned(row.realizedPnlIn1, 4)} ${row.token1Symbol}` : '-';
       const gas = row.gasCostIn1 != null ? `${formatNumber(row.gasCostIn1, 4)} ${row.token1Symbol}` : '-';
-      const profitValue =
-        row.realizedPnlIn1 != null && row.realizedFeesIn1 != null && row.gasCostIn1 != null
-          ? row.realizedPnlIn1 + row.realizedFeesIn1 - row.gasCostIn1
-          : null;
+      const swapFee = row.swapFeeIn1 != null ? `${formatNumber(row.swapFeeIn1, 4)} ${row.token1Symbol}` : '-';
+      const profitValue = computeProfitValue(row);
       const profitLabel = profitValue != null ? `${formatSigned(profitValue, 4)} ${row.token1Symbol}` : '-';
       const profitClass = profitValue == null ? '' : profitValue >= 0 ? 'positive' : 'negative';
       const closeReason = row.closeReason ?? '-';
@@ -511,6 +510,7 @@ async function loadHistory() {
         <td>${fees}</td>
         <td>${pnl}</td>
         <td>${gas}</td>
+        <td>${swapFee}</td>
         <td class="history-profit ${profitClass}">${profitLabel}</td>
         <td>${closeReason}</td>
         <td>${closedAt}</td>
