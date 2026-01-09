@@ -373,7 +373,7 @@ h1 {
 
 .grid-main {
   display: grid;
-  grid-template-columns: 1fr 320px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
   gap: 20px;
   margin-bottom: 26px;
   align-items: start;
@@ -387,20 +387,26 @@ h1 {
 
 .grid-top {
   display: grid;
-  grid-template-columns: repeat(3, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 20px;
 }
 
 .grid-bottom {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 20px;
 }
 
 .grid-charts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 20px;
+}
+
+@media (max-width: 1400px) {
+  .grid-main {
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  }
 }
 
 .chart-card {
@@ -462,7 +468,7 @@ h1 {
   }
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1200px) and (min-width: 1101px) {
   .grid-main {
     grid-template-columns: 1fr 280px;
   }
