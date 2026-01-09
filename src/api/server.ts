@@ -3,7 +3,7 @@ import https from 'https';
 import path from 'path';
 import { URL } from 'url';
 
-import { getConfig, getSnapshot, updateConfig } from '../state/store';
+import { getConfig, getLogs, getSnapshot, updateConfig } from '../state/store';
 import { deletePositionsByTokenIds, getLatestActivePosition, getLatestPosition, listPositions } from '../db/positions';
 import { getDb } from '../db/sqlite';
 
@@ -97,6 +97,11 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
 
   app.get('/config', (_req, res) => {
     res.json(getConfig());
+  });
+
+  app.get('/logs', (req, res) => {
+    const limit = Number(req.query.limit ?? '50');
+    res.json(getLogs(Number.isFinite(limit) ? limit : 50));
   });
 
   app.post('/config', (req, res) => {

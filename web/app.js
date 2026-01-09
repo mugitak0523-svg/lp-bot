@@ -39,6 +39,8 @@ const historyTodayTotalEl = document.getElementById('history-today-total');
 const chartSvg = document.getElementById('price-chart');
 const chartMetaEl = document.getElementById('chart-meta');
 let chartProfitEl = document.getElementById('chart-profit');
+const logStreamEl = document.getElementById('monitor-logs');
+const logStatusEl = document.getElementById('log-status');
 const configForm = document.getElementById('config-form');
 const rebalanceBtn = document.getElementById('btn-rebalance');
 const closeBtn = document.getElementById('btn-close');
@@ -495,8 +497,10 @@ async function loadHistory() {
         row.closedNetValueIn1 != null ? `${formatNumber(row.closedNetValueIn1, 4)} ${row.token1Symbol}` : '-';
       const fees = row.realizedFeesIn1 != null ? `${formatNumber(row.realizedFeesIn1, 4)} ${row.token1Symbol}` : '-';
       const pnl = row.realizedPnlIn1 != null ? `${formatSigned(row.realizedPnlIn1, 4)} ${row.token1Symbol}` : '-';
-      const gas = row.gasCostIn1 != null ? `${formatNumber(row.gasCostIn1, 4)} ${row.token1Symbol}` : '-';
-      const swapFee = row.swapFeeIn1 != null ? `${formatNumber(row.swapFeeIn1, 4)} ${row.token1Symbol}` : '-';
+      const gas =
+        row.gasCostIn1 != null ? `${formatSigned(-row.gasCostIn1, 4)} ${row.token1Symbol}` : '-';
+      const swapFee =
+        row.swapFeeIn1 != null ? `${formatSigned(-row.swapFeeIn1, 4)} ${row.token1Symbol}` : '-';
       const profitValue = computeProfitValue(row);
       const profitLabel = profitValue != null ? `${formatSigned(profitValue, 4)} ${row.token1Symbol}` : '-';
       const profitClass = profitValue == null ? '' : profitValue >= 0 ? 'positive' : 'negative';
@@ -518,6 +522,26 @@ async function loadHistory() {
     })
     .join('');
   updateHistoryCharts(closed);
+}
+
+async function loadLogs() {
+  if (!logStreamEl) return;
+  const entries = await fetchJson('/logs?limit=30');
+  if (!Array.isArray(entries) || entries.length === 0) {
+    logStreamEl.textContent = '-';
+    if (logStatusEl) logStatusEl.textContent = 'No logs';
+    return;
+  }
+  const text = entries
+    .map((entry) => (entry?.message ? entry.message : ''))
+    .filter((line) => line.length > 0)
+    .join('\n\n');
+  logStreamEl.textContent = text || '-';
+  const last = entries[entries.length - 1];
+  if (logStatusEl && last?.timestamp) {
+    const lastTime = new Date(last.timestamp).toLocaleTimeString();
+    logStatusEl.textContent = `Last ${lastTime}`;
+  }
 }
 
 function renderPriceChart(points, meta) {
@@ -578,6 +602,7 @@ async function loadActivePosition() {
     activeGasEl.textContent = '-';
     if (activeSwapFeeEl) activeSwapFeeEl.textContent = '-';
     activeStatusEl.textContent = 'no active position';
+    activeStatusEl.classList.remove('status-active');
     activeGasIn1 = null;
     activeSwapFeeIn1 = null;
     activeSymbol1 = null;
@@ -626,6 +651,7 @@ async function loadActivePosition() {
       data.swapFeeIn1 != null ? `${formatNumber(data.swapFeeIn1, 4)} ${data.token1Symbol}` : '-';
   }
   activeStatusEl.textContent = data.status;
+  activeStatusEl.classList.toggle('status-active', data.status === 'active');
   activeGasIn1 = data.gasCostIn1 ?? null;
   activeSwapFeeIn1 = data.swapFeeIn1 ?? null;
   activeSymbol1 = data.token1Symbol ?? null;
@@ -679,6 +705,7 @@ async function boot() {
     console.error(error);
   }
   loadChart().catch((error) => console.error(error));
+  loadLogs().catch((error) => console.error(error));
   navItems.forEach((item) => {
     item.addEventListener('click', () => {
       const viewName = item.dataset.view;
@@ -693,6 +720,9 @@ async function boot() {
   setInterval(() => {
     loadChart().catch((error) => console.error(error));
   }, 30000);
+  setInterval(() => {
+    loadLogs().catch((error) => console.error(error));
+  }, 5000);
   setInterval(() => {
     if (activeCreatedAtMs) {
       holdTimeEl.textContent = formatDuration(Date.now() - activeCreatedAtMs);

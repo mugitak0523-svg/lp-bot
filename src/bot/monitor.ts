@@ -8,7 +8,7 @@ import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/inter
 import { loadSettings } from '../config/settings';
 import { createHttpProvider, createWsProvider } from '../utils/provider';
 import { formatPercent, logHeader } from '../utils/logger';
-import { MonitorSnapshot } from '../state/store';
+import { MonitorSnapshot, addLog } from '../state/store';
 
 const NFPM_ADDRESS = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
 const MAX_UINT128 = ethers.BigNumber.from('0xffffffffffffffffffffffffffffffff');
@@ -168,6 +168,19 @@ export async function startMonitor(
       console.log(`Value : ${amount0.toFixed(4)} ${sym0} + ${amount1.toFixed(4)} ${sym1}`);
       console.log(`Net   : ${netValueIn1.toFixed(4)} ${sym1} (PnL ${formatSigned(pnl)} ${sym1}, ${formatSigned(pnlPct, 2)}%)`);
       console.log(`Fees  : ${feesText}`);
+
+      addLog(
+        [
+          `[${logTime}] ${trigger} | ${statusHeader}`,
+          `Price : 1 ${sym0} = ${price0In1.toFixed(6)} ${sym1}`,
+          `Range : tick ${tickLower} ~ ${tickUpper} (current ${currentTick})`,
+          `Asset : ${sym0} ${ratio0.toFixed(0)}% / ${sym1} ${ratio1.toFixed(0)}%`,
+          `Value : ${amount0.toFixed(4)} ${sym0} + ${amount1.toFixed(4)} ${sym1}`,
+          `Net   : ${netValueIn1.toFixed(4)} ${sym1} (PnL ${formatSigned(pnl)} ${sym1}, ${formatSigned(pnlPct, 2)}%)`,
+          `Fees  : ${feesText}`,
+        ].join('\n'),
+        snapshotTime
+      );
 
       callbacks.onSnapshot?.({
         timestamp: snapshotTime,
