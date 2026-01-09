@@ -1,4 +1,4 @@
-import { BigNumber, Contract, Signer } from 'ethers';
+import { BigNumber, Contract, ContractReceipt, Signer } from 'ethers';
 import SwapRouterABI from '@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json';
 
 import { SWAP_ROUTER_ADDRESS } from './addresses';
@@ -16,7 +16,7 @@ export async function swapExactInputSingle(params: {
   amountIn: BigNumber;
   amountOutMinimum: BigNumber;
   deadline: number;
-}): Promise<string> {
+}): Promise<ContractReceipt> {
   const tx = await params.router.exactInputSingle({
     tokenIn: params.tokenIn,
     tokenOut: params.tokenOut,
@@ -27,6 +27,28 @@ export async function swapExactInputSingle(params: {
     amountOutMinimum: params.amountOutMinimum,
     sqrtPriceLimitX96: 0,
   });
-  const receipt = await tx.wait();
-  return receipt.transactionHash;
+  return tx.wait();
+}
+
+export async function swapExactOutputSingle(params: {
+  router: Contract;
+  tokenIn: string;
+  tokenOut: string;
+  fee: number;
+  recipient: string;
+  amountOut: BigNumber;
+  amountInMaximum: BigNumber;
+  deadline: number;
+}): Promise<ContractReceipt> {
+  const tx = await params.router.exactOutputSingle({
+    tokenIn: params.tokenIn,
+    tokenOut: params.tokenOut,
+    fee: params.fee,
+    recipient: params.recipient,
+    deadline: params.deadline,
+    amountOut: params.amountOut,
+    amountInMaximum: params.amountInMaximum,
+    sqrtPriceLimitX96: 0,
+  });
+  return tx.wait();
 }

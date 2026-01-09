@@ -4,6 +4,7 @@ export type RuntimeConfig = {
   slippageBps: number;
   stopLossPercent: number;
   maxGasPriceGwei: number;
+  targetTotalToken1: number;
 };
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -19,5 +20,6 @@ export function loadRuntimeConfig(): RuntimeConfig {
     slippageBps: parseNumber(process.env.SLIPPAGE_BPS, 50),
     stopLossPercent: parseNumber(process.env.STOP_LOSS_PERCENT, 10),
     maxGasPriceGwei: parseNumber(process.env.MAX_GAS_PRICE_GWEI, 50),
+    targetTotalToken1: parseNumber(process.env.TARGET_TOTAL_TOKEN1, 0),
   };
 }

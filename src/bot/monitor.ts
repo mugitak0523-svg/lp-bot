@@ -28,14 +28,28 @@ export type MonitorCallbacks = {
   onSnapshot?: (snapshot: MonitorSnapshot) => void;
 };
 
-export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<void> {
+export type MonitorOptions = {
+  tokenId?: string;
+  initialNetValue?: number;
+};
+
+export type MonitorController = {
+  tokenId: string;
+  stop: () => void;
+};
+
+export async function startMonitor(
+  callbacks: MonitorCallbacks = {},
+  options: MonitorOptions = {}
+): Promise<MonitorController> {
   const settings = loadSettings();
+  const tokenId = options.tokenId ?? settings.tokenId;
   const httpProvider = createHttpProvider(settings.rpcUrl);
 
   const nfpm = new ethers.Contract(NFPM_ADDRESS, NFPM_ABI.abi, httpProvider);
   const poolContract = new ethers.Contract(settings.poolAddress, PoolABI.abi, httpProvider);
 
-  const tokenIdBN = ethers.BigNumber.from(settings.tokenId);
+  const tokenIdBN = ethers.BigNumber.from(tokenId);
   const ownerAddress = await nfpm.ownerOf(tokenIdBN);
 
   const [token0Addr, token1Addr, fee] = await Promise.all([
@@ -58,11 +72,11 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   const token1 = new Token(settings.chainId, token1Addr, dec1, sym1);
 
   logHeader('Uniswap V3 LP Monitor');
-  console.log(`Target: TokenID ${settings.tokenId} (${sym0}/${sym1})`);
+  console.log(`Target: TokenID ${tokenId} (${sym0}/${sym1})`);
   console.log(`Owner : ${ownerAddress}`);
 
   const state: MonitorState = {
-    initialNetValue: null,
+    initialNetValue: typeof options.initialNetValue === 'number' ? options.initialNetValue : null,
     lastUpdateTime: 0,
     isUpdating: false,
   };
@@ -101,12 +115,12 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
       const value0In1 = amount0 * price0In1;
       const netValueIn1 = value0In1 + amount1;
 
-      if (state.initialNetValue === null) {
+      if (state.initialNetValue === null && posData.liquidity.gt(0)) {
         state.initialNetValue = netValueIn1;
       }
 
-      const pnl = netValueIn1 - (state.initialNetValue ?? 0);
-      const pnlPct = state.initialNetValue ? (pnl / state.initialNetValue) * 100 : 0;
+      const pnl = posData.liquidity.gt(0) ? netValueIn1 - (state.initialNetValue ?? 0) : 0;
+      const pnlPct = posData.liquidity.gt(0) && state.initialNetValue ? (pnl / state.initialNetValue) * 100 : 0;
 
       let feesText = '(fetching)';
       let fee0 = 0;
@@ -142,11 +156,12 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
       if (currentTick < tickLower) statusHeader = `OUT OF RANGE (LOW, ${sym0} 100%)`;
       else if (currentTick > tickUpper) statusHeader = `OUT OF RANGE (HIGH, ${sym1} 100%)`;
 
-      const timestamp = new Date().toLocaleTimeString();
+      const logTime = new Date().toLocaleTimeString();
+      const snapshotTime = new Date().toISOString();
       const ratio0 = netValueIn1 > 0 ? (value0In1 / netValueIn1) * 100 : 0;
       const ratio1 = netValueIn1 > 0 ? (amount1 / netValueIn1) * 100 : 0;
 
-      console.log(`\n[${timestamp}] ${trigger} | ${statusHeader}`);
+      console.log(`\n[${logTime}] ${trigger} | ${statusHeader}`);
       console.log(`Price : 1 ${sym0} = ${price0In1.toFixed(6)} ${sym1}`);
       console.log(`Range : tick ${tickLower} ~ ${tickUpper} (current ${currentTick})`);
       console.log(`Asset : ${sym0} ${ratio0.toFixed(0)}% / ${sym1} ${ratio1.toFixed(0)}%`);
@@ -155,7 +170,7 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
       console.log(`Fees  : ${feesText}`);
 
       callbacks.onSnapshot?.({
-        timestamp,
+        timestamp: snapshotTime,
         trigger,
         status: statusHeader,
         symbol0: sym0,
@@ -175,6 +190,7 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
         fee1,
         feeTotalIn1,
         feeYieldPct: feeYield,
+        liquidity: posData.liquidity.toString(),
       });
     } catch (error) {
       console.error('Update Error:', error);
@@ -190,6 +206,7 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   let wsProvider = createWsProvider(settings.rpcWss);
   let nfpmWs: ethers.Contract | null = null;
   let poolWs: ethers.Contract | null = null;
+  let stopped = false;
 
   const cleanupWs = (): void => {
     if (poolWs) poolWs.removeAllListeners();
@@ -199,10 +216,12 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   };
 
   const handleWsDisconnect = (): void => {
+    if (stopped) return;
     console.error('WS Closed. Reconnecting...');
     cleanupWs();
     wsProvider.destroy();
     setTimeout(() => {
+      if (stopped) return;
       wsProvider = createWsProvider(settings.rpcWss);
       attachWsListeners(wsProvider);
     }, 1000);
@@ -229,11 +248,22 @@ export async function startMonitor(callbacks: MonitorCallbacks = {}): Promise<vo
   };
 
   attachWsListeners(wsProvider);
+
+  return {
+    tokenId,
+    stop: () => {
+      stopped = true;
+      cleanupWs();
+      wsProvider.destroy();
+    },
+  };
 }
 
 if (require.main === module) {
-  startMonitor().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  startMonitor()
+    .then(() => undefined)
+    .catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
 }

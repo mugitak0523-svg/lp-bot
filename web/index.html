@@ -13,89 +13,221 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <div class="bg-orb orb-1"></div>
-    <div class="bg-orb orb-2"></div>
-    <main class="app">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Arbitrum / Uniswap V3</p>
-          <h1>LP Bot Dashboard</h1>
-          <p class="subtitle">監視・設定・手動アクションを一つの画面で。</p>
+    <header class="header-bar">
+      <div class="header-left">
+        <p class="eyebrow">LP BOT</p>
+      </div>
+      <div class="header-right">
+        <div class="status-pill" id="status-chip">polling on</div>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand"></div>
+        <nav class="nav">
+          <button class="nav-item active" data-view="positions">Positions</button>
+          <button class="nav-item" data-view="history">History</button>
+          <button class="nav-item" data-view="settings">Settings</button>
+        </nav>
+        <div class="sidebar-footer">
+          <p class="hint">Environment: Arbitrum</p>
         </div>
-        <div class="status-chip" id="status-chip">no-data</div>
-      </header>
+      </aside>
 
-      <section class="grid">
-        <article class="card" id="card-overview">
-          <h2>Overview</h2>
-          <div class="metric">
-            <span class="label">Price</span>
-            <span class="value" id="price">-</span>
-          </div>
-          <div class="metric">
-            <span class="label">Range</span>
-            <span class="value" id="range">-</span>
-          </div>
-          <div class="metric">
-            <span class="label">Asset</span>
-            <span class="value" id="asset">-</span>
-          </div>
-        </article>
+      <main class="app">
 
-        <article class="card" id="card-value">
-          <h2>Net Value</h2>
-          <div class="metric large">
-            <span class="label">Total</span>
-            <span class="value" id="net-value">-</span>
-          </div>
-          <div class="metric">
-            <span class="label">PnL</span>
-            <span class="value" id="pnl">-</span>
-          </div>
-          <div class="metric">
-            <span class="label">Fees</span>
-            <span class="value" id="fees">-</span>
-          </div>
-        </article>
+        <section class="view view-active" id="view-positions">
+          <section class="grid-main">
+          <div class="grid-left">
+            <div class="grid-top">
+              <article class="stat-card" id="card-net">
+                <p class="card-title">Position Size</p>
+                <p class="stat-value">
+                  <span id="net-value">-</span>
+                  <span class="value-inline hidden" id="net-pnl">-</span>
+                </p>
+                <div class="ratio-bar" aria-hidden="true">
+                  <div class="ratio-fill ratio-token0" id="ratio-fill"></div>
+                  <div class="ratio-fill ratio-token1" id="ratio-fill-1"></div>
+                </div>
+                <p class="ratio-text" id="ratio-text">-</p>
+              </article>
+              <article class="stat-card" id="card-fees">
+                <p class="card-title">Fees</p>
+                <p class="stat-value" id="fees">-</p>
+                <div class="ratio-bar" aria-hidden="true">
+                  <div class="ratio-fill ratio-token0" id="fee-ratio-fill"></div>
+                  <div class="ratio-fill ratio-token1" id="fee-ratio-fill-1"></div>
+                </div>
+                <p class="ratio-text" id="fee-ratio-text">-</p>
+              </article>
+              <article class="stat-card" id="card-profit">
+                <p class="card-title">Profit</p>
+                <p class="stat-value">
+                  <span class="stat-value inline" id="profit-total">-</span>
+                  <span class="stat-value inline profit-inline" id="profit-sub">-</span>
+                </p>
+                <p class="stat-sub" id="profit-detail">-</p>
+                <div class="ratio-bar" aria-hidden="true">
+                  <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl"></div>
+                  <div class="ratio-fill ratio-fees" id="profit-ratio-fees"></div>
+                  <div class="ratio-fill ratio-gas" id="profit-ratio-gas"></div>
+                  <div class="ratio-fill ratio-swap" id="profit-ratio-swap"></div>
+                </div>
+                <p class="ratio-text" id="profit-ratio-text">-</p>
+              </article>
+            </div>
+            <div class="grid-bottom">
+              <article class="card" id="card-active">
+            <h2 class="card-title">Active Position</h2>
+            <div class="metric">
+              <span class="label">Token ID</span>
+              <span class="value" id="active-token">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Size (created)</span>
+              <span class="value" id="active-size">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Range (tick)</span>
+              <span class="value" id="active-range">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Range (price)</span>
+              <span class="value" id="active-range-price">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Range (stop)</span>
+              <span class="value" id="active-stop-loss">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">ETH Price (created)</span>
+              <span class="value" id="active-price">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Gas (created)</span>
+              <span class="value" id="active-gas">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Swap Fee</span>
+              <span class="value" id="active-swap-fee">-</span>
+            </div>
+            <div class="metric">
+              <span class="label">Status</span>
+              <span class="value" id="active-status">-</span>
+            </div>
+          </article>
 
-        <article class="card" id="card-config">
-          <h2>Config</h2>
-          <form id="config-form">
-            <label>
-              Tick Range
-              <input type="number" name="tickRange" step="1" />
-            </label>
-            <label>
-              Delay (sec)
-              <input type="number" name="rebalanceDelaySec" step="1" />
-            </label>
-            <label>
-              Slippage (bps)
-              <input type="number" name="slippageBps" step="1" />
-            </label>
-            <label>
-              Stop Loss (%)
-              <input type="number" name="stopLossPercent" step="0.1" />
-            </label>
-            <label>
-              Max Gas (gwei)
-              <input type="number" name="maxGasPriceGwei" step="1" />
-            </label>
-            <button type="submit" class="btn primary">Save</button>
-          </form>
-        </article>
-
-        <article class="card" id="card-actions">
-          <h2>Actions</h2>
-          <div class="actions">
-            <button class="btn ghost" id="btn-rebalance">Manual Rebalance</button>
-            <button class="btn ghost" id="btn-close">Close Position</button>
-            <button class="btn danger" id="btn-panic">Panic Close</button>
+          <article class="card" id="card-live">
+            <h2 class="card-title live-title">LIVE<span class="live-dot" aria-hidden="true"></span></h2>
+            <p class="stat-value" id="price">-</p>
+            <p class="stat-sub">Created Price <span id="created-price">-</span></p>
+            <p class="stat-sub"><span class="stat-value inline" id="hold-time">-</span></p>
+            <p class="stat-sub">Created at <span id="created-at">-</span></p>
+            <p class="stat-sub"><span class="stat-value inline" id="rebalance-eta">-</span></p>
+          </article>
+            </div>
+            <article class="card chart-card" id="card-chart">
+              <div class="chart-header">
+                <h2 class="card-title">Pool Price</h2>
+                <span class="stat-sub" id="chart-profit">-</span>
+              </div>
+              <div class="chart-wrap">
+                <svg id="price-chart" viewBox="0 0 640 240" preserveAspectRatio="none" role="img" aria-label="Price chart"></svg>
+              </div>
+              <p class="stat-sub" id="chart-meta">-</p>
+            </article>
           </div>
-          <p class="hint">実行中は自動リバランスと競合しないよう制御されます。</p>
-        </article>
-      </section>
-    </main>
+
+          <article class="card" id="card-actions">
+            <h2 class="card-title">Actions</h2>
+            <div class="actions">
+              <button class="btn ghost" id="btn-rebalance">Manual Rebalance</button>
+              <button class="btn ghost" id="btn-close">Close Position</button>
+            </div>
+            <form id="config-form" class="form-grid form-divider">
+              <label>
+                Tick Range
+                <input type="number" name="tickRange" step="1" />
+              </label>
+              <label>
+                Delay (sec)
+                <input type="number" name="rebalanceDelaySec" step="1" />
+              </label>
+              <label>
+                Slippage (bps)
+                <input type="number" name="slippageBps" step="1" />
+              </label>
+              <label>
+                Stop Loss (%)
+                <input type="number" name="stopLossPercent" step="0.1" />
+              </label>
+              <label>
+                Max Gas (gwei)
+                <input type="number" name="maxGasPriceGwei" step="1" />
+              </label>
+              <label>
+                Position Size (token1)
+                <input type="number" name="targetTotalToken1" step="0.0001" />
+              </label>
+              <button type="submit" class="btn primary" id="btn-create">Create Position</button>
+            </form>
+            <p class="hint" id="create-hint"></p>
+          </article>
+          </section>
+        </section>
+
+        <section class="view" id="view-history">
+          <div class="history-charts-standalone">
+            <div class="card history-chart">
+              <div class="chart-header">
+                <h2 class="card-title">Profit Trend</h2>
+                <span class="stat-sub" id="history-total-profit">-</span>
+              </div>
+              <canvas id="history-profit-chart" height="160"></canvas>
+            </div>
+            <div class="card history-chart">
+              <div class="chart-header">
+                <h2 class="card-title">Today Profit</h2>
+                <span class="stat-sub" id="history-today-total">-</span>
+              </div>
+              <canvas id="history-today-chart" height="160"></canvas>
+            </div>
+          </div>
+          <div class="card history-card">
+            <h2 class="card-title">History</h2>
+            <p class="stat-sub" id="history-empty">No closed positions.</p>
+            <div class="table-wrap">
+              <table class="history-table">
+                <thead>
+                  <tr>
+                    <th>Token ID</th>
+                    <th>Range</th>
+                    <th>Size (created)</th>
+                    <th>Closed Net</th>
+                    <th>Fees</th>
+                    <th>PnL</th>
+                    <th>Gas</th>
+                    <th>Profit</th>
+                    <th>Close Reason</th>
+                    <th>Closed At</th>
+                  </tr>
+                </thead>
+                <tbody id="history-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="view" id="view-settings">
+          <div class="card">
+            <h2 class="card-title">Settings</h2>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

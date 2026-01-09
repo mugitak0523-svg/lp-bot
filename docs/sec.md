@@ -11,6 +11,7 @@
 Arbitrum One上のUniswap V3における流動性提供（LP）を自動化するシステム。
 指定した価格帯（Tick Range）から外れた際に自動でリバランス（ポジションの組み直し）を行い、手数料収益の最大化を目指す。
 コア機能はAPIとして実装し、外部（フロントエンド等）から状態確認や操作を可能にする。
+**複数ポジション（複数NFT）を同時に管理する前提**とする。
 
 ## 2. システムアーキテクチャ
 
@@ -51,6 +52,7 @@ Arbitrum One上のUniswap V3における流動性提供（LP）を自動化す�
 * Gas価格（急騰時の監視用）
 * ポジションの状態（In Range / Out of Range）
 * 含み益・未回収手数料
+* **複数ポジション対応:** 監視はポジション単位で行い、各ポジションの状態を独立に保持する。
 
 
 
@@ -96,7 +98,7 @@ Arbitrum One上のUniswap V3における流動性提供（LP）を自動化す�
 
 * **APIエンドポイント:** フロントエンド向けに以下の情報を提供。
 * Botステータス（稼働中/停止中/待機中）
-* 現在の資産状況、PnL（損益）
+* **ポジション一覧（複数）**の資産状況、PnL（損益）
 * 現在の設定値
 
 
@@ -162,7 +164,7 @@ root/
 フロントエンドから叩くための主要エンドポイント定義です。
 
 * **`GET /api/status`**
-* **Response:** 現在価格, Tick, Range状態(In/Out), ポジション内訳(ETH/USDC), 累積手数料, Net Value, 含み損益率。
+* **Response:** 複数ポジションの配列で、現在価格, Tick, Range状態(In/Out), ポジション内訳(ETH/USDC), 累積手数料, Net Value, 含み損益率。
 
 
 * **`GET /api/config`**
@@ -174,11 +176,11 @@ root/
 
 
 * **`POST /api/action/start`**
-* Botの自動監視を開始。
+* Botの自動監視を開始（全ポジション or 指定ポジション）。
 
 
 * **`POST /api/action/stop`**
-* Botの自動監視を停止（ポジションは維持）。
+* Botの自動監視を停止（ポジションは維持、全ポジション or 指定ポジション）。
 
 
 * **`POST /api/action/panic`**
@@ -200,6 +202,11 @@ root/
 * GitHub経由で **Railway** にデプロイ。
 * 環境変数はRailwayのダッシュボードで設定。
 * 永続化が必要なデータ（開始時の元本データなど）は、RailwayのVolumeか、**SQLite**（推奨）/簡易なJSON DB（lowdb等）/Redisを使用する（再起動で消えないようにするため）。ポジション情報はSQLiteに保存して管理し、**リバランスのたびに新しいレコードとして保存**する（履歴を残す）。
+
+**SQLite 仕様（ポジション履歴）**
+* テーブル: `positions`
+* 保存項目（必須）: token_id, pool_address, token0/1(アドレス・symbol・decimals), fee, tick_lower/upper, liquidity, amount0/1, price0_in_1, net_value_in_1, mint_tx_hash, status, created_at, updated_at
+* 保存項目（任意）: fees0/fees1, gas_cost_native/gas_cost_in_1, rebalance_reason, close_tx_hash
 
 
 3. **Deployment (Frontend):**

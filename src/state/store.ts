@@ -10,6 +10,8 @@ export type MonitorSnapshot = {
   tickLower: number;
   tickUpper: number;
   currentTick: number;
+  outOfRange?: boolean;
+  rebalanceRemainingSec?: number | null;
   ratio0: number;
   ratio1: number;
   amount0: number;
@@ -21,6 +23,7 @@ export type MonitorSnapshot = {
   fee1: number;
   feeTotalIn1: number;
   feeYieldPct: number;
+  liquidity?: string;
 };
 
 export type BotState = {
