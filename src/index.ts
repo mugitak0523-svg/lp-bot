@@ -139,6 +139,35 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   }
 
   if (!state.rebalancing && shouldRebalance) {
+    if (config.stopAfterAutoClose) {
+      state.rebalancing = true;
+      sendDiscordMessage(webhookUrl, 'Auto close (no rebalance) start.', 'warn');
+      try {
+        const active = await getLatestActivePosition(db);
+        if (!active) {
+          throw new Error('active position not found');
+        }
+        const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
+        const details: CloseDetails = {
+          closeTxHash: result.closeTxHash,
+          closeReason: 'auto_close_no_rebalance',
+          closedNetValueIn1: result.closedNetValueIn1,
+          realizedFeesIn1: result.closedFeesIn1,
+          realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          closedAt: new Date().toISOString(),
+        };
+        await closePositionWithDetails(db, active.tokenId, details);
+        await maybeStopMonitor();
+        sendDiscordMessage(webhookUrl, 'Auto close done. Monitoring stopped.', 'success');
+      } catch (error) {
+        console.error('Auto close error:', error);
+        sendDiscordMessage(webhookUrl, `Auto close error: ${error}`, 'error');
+      } finally {
+        state.rebalancing = false;
+        state.outOfRangeSince = 0;
+      }
+      return;
+    }
     const gasPrice = await httpProvider.getGasPrice();
     const gasGwei = Number(ethers.utils.formatUnits(gasPrice, 'gwei'));
     if (gasGwei > config.maxGasPriceGwei) {

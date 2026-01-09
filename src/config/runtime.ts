@@ -5,12 +5,21 @@ export type RuntimeConfig = {
   stopLossPercent: number;
   maxGasPriceGwei: number;
   targetTotalToken1: number;
+  stopAfterAutoClose: boolean;
 };
 
 function parseNumber(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (!value) return fallback;
+  const normalized = value.toLowerCase().trim();
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return fallback;
 }
 
 export function loadRuntimeConfig(): RuntimeConfig {
@@ -21,5 +30,6 @@ export function loadRuntimeConfig(): RuntimeConfig {
     stopLossPercent: parseNumber(process.env.STOP_LOSS_PERCENT, 10),
     maxGasPriceGwei: parseNumber(process.env.MAX_GAS_PRICE_GWEI, 50),
     targetTotalToken1: parseNumber(process.env.TARGET_TOTAL_TOKEN1, 0),
+    stopAfterAutoClose: parseBoolean(process.env.STOP_AFTER_AUTO_CLOSE, false),
   };
 }

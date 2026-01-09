@@ -1,3 +1,7 @@
 curl -X POST http://localhost:3000/positions/delete \
   -H "Content-Type: application/json" \
-  -d '{"tokenIds":["5204880","5204870"]}'
+  -d '{"tokenIds":["5208109"]}'
+
+  curl -X POST https://lp-bot-production.up.railway.app/positions/delete \
+  -H "Content-Type: application/json" \
+  -d '{"tokenIds":["5208109"]}'

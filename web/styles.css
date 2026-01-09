@@ -783,6 +783,12 @@ input:focus {
   text-align: left;
 }
 
+.btn.toggle.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(243, 106, 43, 0.08);
+}
+
 .btn.danger {
   background: #2b1d16;
   color: #fff2e9;

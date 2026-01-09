@@ -98,6 +98,7 @@ const configForm = document.getElementById('config-form');
 const rebalanceBtn = document.getElementById('btn-rebalance');
 const closeBtn = document.getElementById('btn-close');
 const createBtn = document.getElementById('btn-create');
+const stopAutoCloseBtn = document.getElementById('btn-stop-auto-close');
 const createHint = document.getElementById('create-hint');
 const navItems = document.querySelectorAll('.nav-item');
 
@@ -127,6 +128,7 @@ let lastActiveTokenId = null;
 let lastPositionUsd = null;
 let lastRebalanceRemainingLabel = null;
 let lastRebalanceTotalLabel = null;
+let stopAfterAutoCloseValue = false;
 
 function setProfitHeader() {
   if (!profitTotalEl) return;
@@ -582,6 +584,12 @@ async function loadConfig() {
     typeof config.stopLossPercent === 'number' ? config.stopLossPercent : stopLossPercentValue;
   rebalanceDelaySecValue =
     typeof config.rebalanceDelaySec === 'number' ? config.rebalanceDelaySec : rebalanceDelaySecValue;
+  stopAfterAutoCloseValue =
+    typeof config.stopAfterAutoClose === 'boolean' ? config.stopAfterAutoClose : stopAfterAutoCloseValue;
+  if (stopAutoCloseBtn) {
+    stopAutoCloseBtn.classList.toggle('active', stopAfterAutoCloseValue);
+    stopAutoCloseBtn.textContent = stopAfterAutoCloseValue ? 'Auto Close Only (ON)' : 'Auto Close Only (OFF)';
+  }
   Object.entries(config).forEach(([key, value]) => {
     const field = configForm.elements.namedItem(key);
     if (field) field.value = value;
@@ -912,6 +920,18 @@ closeBtn.addEventListener('click', async () => {
   if (!confirm('リバランスせずにポジションをクローズしますか？')) return;
   await fetchJson('/action/close', { method: 'POST' });
 });
+
+if (stopAutoCloseBtn) {
+  stopAutoCloseBtn.addEventListener('click', async () => {
+    stopAfterAutoCloseValue = !stopAfterAutoCloseValue;
+    await fetchJson('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stopAfterAutoClose: stopAfterAutoCloseValue }),
+    });
+    await loadConfig();
+  });
+}
 
 
 async function boot() {
