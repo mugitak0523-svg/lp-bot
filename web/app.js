@@ -532,11 +532,16 @@ async function loadLogs() {
     if (logStatusEl) logStatusEl.textContent = 'No logs';
     return;
   }
+  const shouldStickToBottom =
+    logStreamEl.scrollTop + logStreamEl.clientHeight >= logStreamEl.scrollHeight - 16;
   const text = entries
     .map((entry) => (entry?.message ? entry.message : ''))
     .filter((line) => line.length > 0)
     .join('\n\n');
   logStreamEl.textContent = text || '-';
+  if (shouldStickToBottom) {
+    logStreamEl.scrollTop = logStreamEl.scrollHeight;
+  }
   const last = entries[entries.length - 1];
   if (logStatusEl && last?.timestamp) {
     const lastTime = new Date(last.timestamp).toLocaleTimeString();
