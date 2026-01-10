@@ -223,8 +223,8 @@ function formatDuration(ms) {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
   const pad2 = (value) => String(value).padStart(2, '0');
-  if (days > 0) return `${days}d ${pad2(hours)}h ${pad2(minutes)}m`;
-  if (hours > 0) return `${pad2(hours)}h ${pad2(minutes)}m`;
+  if (days > 0) return `${days}d ${pad2(hours)}h ${pad2(minutes)}m ${pad2(seconds)}s`;
+  if (hours > 0) return `${pad2(hours)}h ${pad2(minutes)}m ${pad2(seconds)}s`;
   return `${pad2(minutes)}m ${pad2(seconds)}s`;
 }
 
@@ -652,11 +652,9 @@ async function loadHistory() {
         <td>${closedAt}</td>
         <td>
           <button class="icon-btn delete-row" data-token-id="${tokenId}" title="Delete">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 7h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="M9 7v-2h6v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <path d="M9 10v7M12 10v7M15 10v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-              <rect x="7" y="7" width="10" height="12" rx="2" stroke="currentColor" stroke-width="2"/>
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z"/>
+              <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z"/>
             </svg>
           </button>
         </td>

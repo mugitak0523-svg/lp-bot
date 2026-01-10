@@ -156,7 +156,7 @@ export async function startMonitor(
       if (currentTick < tickLower) statusHeader = `OUT OF RANGE (LOW, ${sym0} 100%)`;
       else if (currentTick > tickUpper) statusHeader = `OUT OF RANGE (HIGH, ${sym1} 100%)`;
 
-      const logTime = new Date().toLocaleTimeString();
+      const logTime = new Date().toLocaleTimeString('ja-JP', { timeZone: 'Asia/Tokyo' });
       const snapshotTime = new Date().toISOString();
       const ratio0 = netValueIn1 > 0 ? (value0In1 / netValueIn1) * 100 : 0;
       const ratio1 = netValueIn1 > 0 ? (amount1 / netValueIn1) * 100 : 0;
