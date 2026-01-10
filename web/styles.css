@@ -172,7 +172,7 @@ h1 {
 .history-table .icon-btn {
   width: 28px;
   height: 28px;
-  color: #b91c1c;
+  color: #dc2626;
 }
 
 .history-table .icon-btn:hover {
@@ -313,6 +313,10 @@ h1 {
 .stat-value.inline {
   display: inline;
   margin: 0;
+}
+
+#hold-time {
+  font-variant-numeric: tabular-nums;
 }
 
 .profit-inline {
