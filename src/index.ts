@@ -130,18 +130,23 @@ function buildRebalanceSummary(params: {
     .join('\n');
 }
 
-function resolveRebalanceConfig(active: Awaited<ReturnType<typeof getLatestActivePosition>>) {
+function resolveActiveConfig(active: Awaited<ReturnType<typeof getLatestActivePosition>>) {
   const fallback = getConfig();
   return {
     tickRange: active?.configTickRange ?? fallback.tickRange,
+    rebalanceDelaySec: active?.configRebalanceDelaySec ?? fallback.rebalanceDelaySec,
     slippageBps: active?.configSlippageBps ?? fallback.slippageBps,
+    stopLossPercent: active?.configStopLossPercent ?? fallback.stopLossPercent,
+    maxGasPriceGwei: active?.configMaxGasPriceGwei ?? fallback.maxGasPriceGwei,
     targetTotalToken1: active?.configTargetTotalToken1 ?? fallback.targetTotalToken1,
+    stopAfterAutoClose:
+      active?.configStopAfterAutoClose != null ? Boolean(active.configStopAfterAutoClose) : fallback.stopAfterAutoClose,
   };
 }
 
-function toPositionRecord(result: RebalanceResult) {
+function toPositionRecord(result: RebalanceResult, configOverride?: ReturnType<typeof resolveActiveConfig>) {
   const now = new Date().toISOString();
-  const config = getConfig();
+  const config = configOverride ?? getConfig();
   return {
     tokenId: result.tokenId,
     poolAddress: result.poolAddress,
@@ -335,7 +340,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       if (!active) {
         throw new Error('active position not found');
       }
-      const rebalanceConfig = resolveRebalanceConfig(active);
+      const rebalanceConfig = resolveActiveConfig(active);
       sendDiscordMessage(
         webhookUrl,
         `Rebalance start.\nToken: ${active.tokenId} (${active.token0Symbol}/${active.token1Symbol})\nTick: ${snapshot.currentTick}`,
@@ -364,7 +369,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
-      await insertPosition(db, toPositionRecord(result));
+      await insertPosition(db, toPositionRecord(result, rebalanceConfig));
       await startMonitorFor(result.tokenId, result.netValueIn1);
       sendDiscordMessage(
         webhookUrl,
@@ -415,7 +420,7 @@ const apiActions = {
         `Manual rebalance start.\nToken: ${active.tokenId} (${active.token0Symbol}/${active.token1Symbol})`,
         'warn'
       );
-      const rebalanceConfig = resolveRebalanceConfig(active);
+      const rebalanceConfig = resolveActiveConfig(active);
       const result = await runRebalance(
         {
           tokenId: active.tokenId,
@@ -438,7 +443,7 @@ const apiActions = {
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
-      await insertPosition(db, toPositionRecord(result));
+      await insertPosition(db, toPositionRecord(result, rebalanceConfig));
       await startMonitorFor(result.tokenId, result.netValueIn1);
       sendDiscordMessage(
         webhookUrl,
