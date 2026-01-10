@@ -845,7 +845,7 @@ async function loadHistory() {
 
 async function loadLogs() {
   if (!logStreamEl) return;
-  const entries = await fetchJson('/logs?limit=30');
+  const entries = await fetchJson('/logs?limit=200');
   if (!Array.isArray(entries) || entries.length === 0) {
     logStreamEl.textContent = '-';
     if (logStatusEl) logStatusEl.textContent = 'No logs';
@@ -866,20 +866,20 @@ async function loadLogs() {
     const lastTime = new Date(last.timestamp).toLocaleTimeString();
     const ageMs = Date.now() - Date.parse(last.timestamp);
     const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.floor(ageMs / 1000)) : null;
-    let ageLabel = '';
+    let ageText = '-';
     if (ageSec != null) {
       const hours = Math.floor(ageSec / 3600);
       const minutes = Math.floor((ageSec % 3600) / 60);
       const seconds = ageSec % 60;
       if (hours > 0) {
-        ageLabel = ` (${hours}h ${minutes}m ${seconds}s ago)`;
+        ageText = `${hours}h ${minutes}m ${seconds}s ago`;
       } else if (minutes > 0) {
-        ageLabel = ` (${minutes}m ${seconds}s ago)`;
+        ageText = `${minutes}m ${seconds}s ago`;
       } else {
-        ageLabel = ` (${seconds}s ago)`;
+        ageText = `${seconds}s ago`;
       }
     }
-    logStatusEl.textContent = `Last ${lastTime}${ageLabel} (${entries.length})`;
+    logStatusEl.textContent = `Last ${lastTime} (${ageText}, ${entries.length} records)`;
   }
 
   const latestId = last?.id ?? null;
@@ -1405,7 +1405,7 @@ async function boot() {
   }, 10000);
   setInterval(() => {
     loadLogs().catch((error) => console.error(error));
-  }, 5000);
+  }, 1000);
   setInterval(() => {
     if (activeCreatedAtMs) {
       holdTimeEl.textContent = formatDuration(Date.now() - activeCreatedAtMs);

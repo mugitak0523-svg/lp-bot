@@ -38,6 +38,7 @@ export type LogEntry = {
   id: number;
   timestamp: string;
   message: string;
+  tokenId?: string;
 };
 
 const LOG_LIMIT = 200;
@@ -70,9 +71,9 @@ export function updateConfig(next: Partial<RuntimeConfig>): RuntimeConfig {
   return state.config;
 }
 
-export function addLog(message: string, timestamp = new Date().toISOString()): void {
+export function addLog(message: string, timestamp = new Date().toISOString(), tokenId?: string): void {
   state.logSeq += 1;
-  state.logs.push({ id: state.logSeq, timestamp, message });
+  state.logs.push({ id: state.logSeq, timestamp, message, tokenId });
   if (state.logs.length > LOG_LIMIT) {
     state.logs.splice(0, state.logs.length - LOG_LIMIT);
   }
