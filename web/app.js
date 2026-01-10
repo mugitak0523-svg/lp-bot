@@ -652,8 +652,8 @@ async function loadStatus() {
   const posTotal = pnlPos + feePos;
   const negTotal = pnlNeg + feeNeg + gasNeg + swapNeg;
   const maxTotal = Math.max(posTotal, negTotal, 1);
-  const posBarWidth = maxTotal > 0 ? (posTotal / maxTotal) * 100 : 0;
-  const negBarWidth = maxTotal > 0 ? (negTotal / maxTotal) * 100 : 0;
+  const posScale = maxTotal > 0 ? posTotal / maxTotal : 0;
+  const negScale = maxTotal > 0 ? negTotal / maxTotal : 0;
   const pnlPosRatio = posTotal > 0 ? (pnlPos / posTotal) * 100 : 0;
   const feePosRatio = posTotal > 0 ? (feePos / posTotal) * 100 : 0;
   const pnlNegRatio = negTotal > 0 ? (pnlNeg / negTotal) * 100 : 0;
@@ -668,10 +668,10 @@ async function loadStatus() {
     profitRatioSwap.style.width = `${swapNegRatio}%`;
   }
   if (profitRatioPositiveBar) {
-    profitRatioPositiveBar.style.width = `${posBarWidth}%`;
+    profitRatioPositiveBar.style.transform = `scaleX(${posScale})`;
   }
   if (profitRatioNegativeBar) {
-    profitRatioNegativeBar.style.width = `${negBarWidth}%`;
+    profitRatioNegativeBar.style.transform = `scaleX(${negScale})`;
   }
 
   if (profitRatioTextPositive) {
