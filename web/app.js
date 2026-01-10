@@ -22,6 +22,8 @@ const profitRatioGas = document.getElementById('profit-ratio-gas');
 const profitRatioSwap = document.getElementById('profit-ratio-swap');
 const profitRatioTextPositive = document.getElementById('profit-ratio-text-positive');
 const profitRatioTextNegative = document.getElementById('profit-ratio-text-negative');
+const profitRatioPositiveBar = document.getElementById('profit-ratio-positive');
+const profitRatioNegativeBar = document.getElementById('profit-ratio-negative');
 const ratioFill0 = document.getElementById('ratio-fill');
 const ratioFill1 = document.getElementById('ratio-fill-1');
 const ratioText = document.getElementById('ratio-text');
@@ -295,6 +297,10 @@ function setRebalanceLabels(remainingLabel, totalLabel) {
       lastRebalanceRemainingLabel = remainingLabel;
       rebalanceEtaRemainingEl.textContent = remainingLabel;
     }
+    const delaySec = rebalanceDelaySecValue ?? 0;
+    const remainingSec = lastRebalanceRemainingSec ?? null;
+    const shouldWarn = delaySec > 0 && typeof remainingSec === 'number' && remainingSec > 0 && remainingSec <= delaySec * 0.1;
+    rebalanceEtaRemainingEl.classList.toggle('warn', shouldWarn);
   }
   if (rebalanceEtaTotalEl) {
     if (totalLabel !== lastRebalanceTotalLabel || rebalanceEtaTotalEl.textContent !== totalLabel) {
@@ -646,6 +652,8 @@ async function loadStatus() {
   const posTotal = pnlPos + feePos;
   const negTotal = pnlNeg + feeNeg + gasNeg + swapNeg;
   const maxTotal = Math.max(posTotal, negTotal, 1);
+  const posBarWidth = maxTotal > 0 ? (posTotal / maxTotal) * 100 : 0;
+  const negBarWidth = maxTotal > 0 ? (negTotal / maxTotal) * 100 : 0;
   const pnlPosRatio = maxTotal > 0 ? (pnlPos / maxTotal) * 100 : 0;
   const feePosRatio = maxTotal > 0 ? (feePos / maxTotal) * 100 : 0;
   const pnlNegRatio = maxTotal > 0 ? (pnlNeg / maxTotal) * 100 : 0;
@@ -658,6 +666,12 @@ async function loadStatus() {
   profitRatioGas.style.width = `${gasNegRatio}%`;
   if (profitRatioSwap) {
     profitRatioSwap.style.width = `${swapNegRatio}%`;
+  }
+  if (profitRatioPositiveBar) {
+    profitRatioPositiveBar.style.width = `${posBarWidth}%`;
+  }
+  if (profitRatioNegativeBar) {
+    profitRatioNegativeBar.style.width = `${negBarWidth}%`;
   }
 
   if (profitRatioTextPositive) {

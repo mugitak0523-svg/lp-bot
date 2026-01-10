@@ -264,6 +264,10 @@ h1 {
   color: #ef4444;
 }
 
+.stat-value.warn {
+  color: #ef4444;
+}
+
 .card-title {
   margin: 0 0 12px;
   font-size: 0.8rem;
