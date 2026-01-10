@@ -654,11 +654,11 @@ async function loadStatus() {
   const maxTotal = Math.max(posTotal, negTotal, 1);
   const posBarWidth = maxTotal > 0 ? (posTotal / maxTotal) * 100 : 0;
   const negBarWidth = maxTotal > 0 ? (negTotal / maxTotal) * 100 : 0;
-  const pnlPosRatio = maxTotal > 0 ? (pnlPos / maxTotal) * 100 : 0;
-  const feePosRatio = maxTotal > 0 ? (feePos / maxTotal) * 100 : 0;
-  const pnlNegRatio = maxTotal > 0 ? (pnlNeg / maxTotal) * 100 : 0;
-  const gasNegRatio = maxTotal > 0 ? (gasNeg / maxTotal) * 100 : 0;
-  const swapNegRatio = maxTotal > 0 ? (swapNeg / maxTotal) * 100 : 0;
+  const pnlPosRatio = posTotal > 0 ? (pnlPos / posTotal) * 100 : 0;
+  const feePosRatio = posTotal > 0 ? (feePos / posTotal) * 100 : 0;
+  const pnlNegRatio = negTotal > 0 ? (pnlNeg / negTotal) * 100 : 0;
+  const gasNegRatio = negTotal > 0 ? (gasNeg / negTotal) * 100 : 0;
+  const swapNegRatio = negTotal > 0 ? (swapNeg / negTotal) * 100 : 0;
 
   if (profitRatioPnlPos) profitRatioPnlPos.style.width = `${pnlPosRatio}%`;
   if (profitRatioPnlNeg) profitRatioPnlNeg.style.width = `${pnlNegRatio}%`;
