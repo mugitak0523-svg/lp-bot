@@ -1,7 +1,7 @@
 import { fetch } from 'cross-fetch'; // Node 18以上なら不要ですが念のため
 
 // ★あなたのプールアドレス (Native USDC / WETH 0.05%)
-const POOL_ADDRESS = '0x641c00a822e8b67699066c45c81f67f407772737';
+const POOL_ADDRESS = '0xc6962004f452bE9203591991D15f6b388e09E8D0';
 const NETWORK = 'arbitrum';
 
 async function main() {
