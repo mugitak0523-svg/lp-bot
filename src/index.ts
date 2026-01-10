@@ -35,6 +35,101 @@ const state = {
   monitorController: null as MonitorController | null,
 };
 
+function formatNumber(value: number | null | undefined, digits = 4): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  return value.toFixed(digits);
+}
+
+function formatSigned(value: number | null | undefined, digits = 4): string {
+  if (value == null || !Number.isFinite(value)) return '-';
+  const sign = value >= 0 ? '+' : '';
+  return `${sign}${value.toFixed(digits)}`;
+}
+
+function buildCloseSummary(params: {
+  title: string;
+  tokenId: string;
+  pool?: string;
+  symbol1?: string;
+  price0In1?: number | null;
+  closedNetValueIn1?: number | null;
+  realizedFeesIn1?: number | null;
+  realizedPnlIn1?: number | null;
+  gasCostIn1?: number | null;
+  swapFeeIn1?: number | null;
+  closeReason?: string | null;
+  closeTxHash?: string | null;
+}): string {
+  const symbol1 = params.symbol1 ?? '';
+  const toNumber = (value: number | null | undefined): number =>
+    value != null && Number.isFinite(value) ? value : 0;
+  const profitParts = [
+    toNumber(params.realizedPnlIn1),
+    toNumber(params.realizedFeesIn1),
+    -toNumber(params.gasCostIn1),
+    -toNumber(params.swapFeeIn1),
+  ];
+  const profitTotal = profitParts.reduce((acc, value) => acc + value, 0);
+  return [
+    params.title,
+    `Token: ${params.tokenId}${params.pool ? ` (${params.pool})` : ''}`,
+    params.closeReason ? `Reason: ${params.closeReason}` : null,
+    params.price0In1 != null ? `Close Price: ${formatNumber(params.price0In1, 4)} ${symbol1}` : null,
+    params.closedNetValueIn1 != null ? `Close Net: ${formatNumber(params.closedNetValueIn1, 4)} ${symbol1}` : null,
+    params.realizedFeesIn1 != null ? `Fees: ${formatSigned(params.realizedFeesIn1, 4)} ${symbol1}` : null,
+    params.realizedPnlIn1 != null ? `PnL: ${formatSigned(params.realizedPnlIn1, 4)} ${symbol1}` : null,
+    params.gasCostIn1 != null ? `Gas: -${formatNumber(params.gasCostIn1, 4)} ${symbol1}` : null,
+    params.swapFeeIn1 != null ? `Swap Fee: -${formatNumber(params.swapFeeIn1, 4)} ${symbol1}` : null,
+    `Profit: ${formatSigned(profitTotal, 4)} ${symbol1}`.trim(),
+    params.closeTxHash ? `Tx: ${params.closeTxHash}` : null,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
+function buildRebalanceSummary(params: {
+  title: string;
+  oldTokenId: string;
+  newTokenId: string;
+  pool?: string;
+  symbol1?: string;
+  price0In1?: number | null;
+  closedNetValueIn1?: number | null;
+  realizedFeesIn1?: number | null;
+  realizedPnlIn1?: number | null;
+  gasCostIn1?: number | null;
+  swapFeeIn1?: number | null;
+  closeReason?: string | null;
+  closeTxHash?: string | null;
+  newRange?: string | null;
+  newSizeIn1?: number | null;
+  mintTxHash?: string | null;
+}): string {
+  const base = buildCloseSummary({
+    title: params.title,
+    tokenId: params.oldTokenId,
+    pool: params.pool,
+    symbol1: params.symbol1,
+    price0In1: params.price0In1,
+    closedNetValueIn1: params.closedNetValueIn1,
+    realizedFeesIn1: params.realizedFeesIn1,
+    realizedPnlIn1: params.realizedPnlIn1,
+    gasCostIn1: params.gasCostIn1,
+    swapFeeIn1: params.swapFeeIn1,
+    closeReason: params.closeReason,
+    closeTxHash: params.closeTxHash,
+  });
+  return [
+    base,
+    `New Token: ${params.newTokenId}`,
+    params.newRange ? `New Range: ${params.newRange}` : null,
+    params.newSizeIn1 != null ? `New Size: ${formatNumber(params.newSizeIn1, 4)} ${params.symbol1 ?? ''}` : null,
+    params.mintTxHash ? `Mint Tx: ${params.mintTxHash}` : null,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n');
+}
+
 function resolveRebalanceConfig(active: Awaited<ReturnType<typeof getLatestActivePosition>>) {
   const fallback = getConfig();
   return {
@@ -143,6 +238,24 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        sendDiscordMessage(
+          webhookUrl,
+          buildCloseSummary({
+            title: 'Stop Loss Close',
+            tokenId: active.tokenId,
+            pool: `${active.token0Symbol}/${active.token1Symbol}`,
+            symbol1: active.token1Symbol,
+            price0In1: result.price0In1,
+            closedNetValueIn1: details.closedNetValueIn1,
+            realizedFeesIn1: details.realizedFeesIn1,
+            realizedPnlIn1: details.realizedPnlIn1,
+            gasCostIn1: active.gasCostIn1,
+            swapFeeIn1: active.swapFeeIn1,
+            closeReason: details.closeReason,
+            closeTxHash: details.closeTxHash,
+          }),
+          'error'
+        );
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
@@ -159,12 +272,16 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   if (!state.rebalancing && shouldRebalance) {
     if (config.stopAfterAutoClose) {
       state.rebalancing = true;
-      sendDiscordMessage(webhookUrl, 'Auto close (no rebalance) start.', 'warn');
       try {
         const active = await getLatestActivePosition(db);
         if (!active) {
           throw new Error('active position not found');
         }
+        sendDiscordMessage(
+          webhookUrl,
+          `Auto close start.\nToken: ${active.tokenId} (${active.token0Symbol}/${active.token1Symbol})`,
+          'warn'
+        );
         const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
         const details: CloseDetails = {
           closeTxHash: result.closeTxHash,
@@ -176,7 +293,25 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
         };
         await closePositionWithDetails(db, active.tokenId, details);
         await maybeStopMonitor();
-        sendDiscordMessage(webhookUrl, 'Auto close done. Monitoring stopped.', 'success');
+        sendDiscordMessage(
+          webhookUrl,
+          buildCloseSummary({
+            title: 'Auto Close Done',
+            tokenId: active.tokenId,
+            pool: `${active.token0Symbol}/${active.token1Symbol}`,
+            symbol1: active.token1Symbol,
+            price0In1: result.price0In1,
+            closedNetValueIn1: details.closedNetValueIn1,
+            realizedFeesIn1: details.realizedFeesIn1,
+            realizedPnlIn1: details.realizedPnlIn1,
+            gasCostIn1: active.gasCostIn1,
+            swapFeeIn1: active.swapFeeIn1,
+            closeReason: details.closeReason,
+            closeTxHash: details.closeTxHash,
+          }),
+          'success'
+        );
+        // Detailed summary already sent above.
       } catch (error) {
         console.error('Auto close error:', error);
         sendDiscordMessage(webhookUrl, `Auto close error: ${error}`, 'error');
@@ -194,7 +329,6 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
     }
 
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, `Rebalance start. Tick=${snapshot.currentTick}`, 'warn');
 
     try {
       const active = await getLatestActivePosition(db);
@@ -202,6 +336,11 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
         throw new Error('active position not found');
       }
       const rebalanceConfig = resolveRebalanceConfig(active);
+      sendDiscordMessage(
+        webhookUrl,
+        `Rebalance start.\nToken: ${active.tokenId} (${active.token0Symbol}/${active.token1Symbol})\nTick: ${snapshot.currentTick}`,
+        'warn'
+      );
       const direction = snapshot.currentTick > snapshot.tickUpper ? 'upper' : 'lower';
       const result = await runRebalance(
         {
@@ -227,7 +366,29 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       }
       await insertPosition(db, toPositionRecord(result));
       await startMonitorFor(result.tokenId, result.netValueIn1);
-      sendDiscordMessage(webhookUrl, 'Rebalance done.', 'success');
+      sendDiscordMessage(
+        webhookUrl,
+        buildRebalanceSummary({
+          title: 'Rebalance Done',
+          oldTokenId: active.tokenId,
+          newTokenId: result.tokenId,
+          pool: `${active.token0Symbol}/${active.token1Symbol}`,
+          symbol1: active.token1Symbol,
+          price0In1: result.price0In1,
+          closedNetValueIn1: result.closedNetValueIn1,
+          realizedFeesIn1: result.closedFeesIn1,
+          realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          gasCostIn1: result.gasCostIn1,
+          swapFeeIn1: result.swapFeeIn1,
+          closeReason: `rebalance_auto(${direction})`,
+          closeTxHash: result.closeTxHash,
+          newRange: `${result.tickLower} ~ ${result.tickUpper}`,
+          newSizeIn1: result.netValueIn1,
+          mintTxHash: result.mintTxHash,
+        }),
+        'success'
+      );
+      // Detailed summary already sent above.
     } catch (error) {
       console.error('Rebalance error:', error);
       sendDiscordMessage(webhookUrl, `Rebalance error: ${error}`, 'error');
@@ -244,12 +405,16 @@ const apiActions = {
       throw new Error('Rebalance already running');
     }
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, 'Manual rebalance start.', 'warn');
     try {
       const active = await getLatestActivePosition(db);
       if (!active) {
         throw new Error('active position not found');
       }
+      sendDiscordMessage(
+        webhookUrl,
+        `Manual rebalance start.\nToken: ${active.tokenId} (${active.token0Symbol}/${active.token1Symbol})`,
+        'warn'
+      );
       const rebalanceConfig = resolveRebalanceConfig(active);
       const result = await runRebalance(
         {
@@ -275,7 +440,29 @@ const apiActions = {
       }
       await insertPosition(db, toPositionRecord(result));
       await startMonitorFor(result.tokenId, result.netValueIn1);
-      sendDiscordMessage(webhookUrl, 'Manual rebalance done.', 'success');
+      sendDiscordMessage(
+        webhookUrl,
+        buildRebalanceSummary({
+          title: 'Manual Rebalance Done',
+          oldTokenId: active.tokenId,
+          newTokenId: result.tokenId,
+          pool: `${active.token0Symbol}/${active.token1Symbol}`,
+          symbol1: active.token1Symbol,
+          price0In1: result.price0In1,
+          closedNetValueIn1: result.closedNetValueIn1,
+          realizedFeesIn1: result.closedFeesIn1,
+          realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          gasCostIn1: result.gasCostIn1,
+          swapFeeIn1: result.swapFeeIn1,
+          closeReason: 'rebalance_manual',
+          closeTxHash: result.closeTxHash,
+          newRange: `${result.tickLower} ~ ${result.tickUpper}`,
+          newSizeIn1: result.netValueIn1,
+          mintTxHash: result.mintTxHash,
+        }),
+        'success'
+      );
+      // Detailed summary already sent above.
     } catch (error) {
       console.error('Manual rebalance error:', error);
       sendDiscordMessage(webhookUrl, `Manual rebalance error: ${error}`, 'error');
@@ -290,12 +477,16 @@ const apiActions = {
       throw new Error('Rebalance already running');
     }
     state.rebalancing = true;
-    sendDiscordMessage(webhookUrl, 'Manual close start.', 'warn');
     try {
       const active = await getLatestActivePosition(db);
       if (!active) {
         throw new Error('active position not found');
       }
+      sendDiscordMessage(
+        webhookUrl,
+        `Manual close start.\nToken: ${active.tokenId} (${active.token0Symbol}/${active.token1Symbol})`,
+        'warn'
+      );
       const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
       const details: CloseDetails = {
         closeTxHash: result.closeTxHash,
@@ -307,7 +498,25 @@ const apiActions = {
       };
       await closePositionWithDetails(db, active.tokenId, details);
       await maybeStopMonitor();
-      sendDiscordMessage(webhookUrl, 'Manual close done.', 'success');
+      sendDiscordMessage(
+        webhookUrl,
+        buildCloseSummary({
+          title: 'Manual Close Done',
+          tokenId: active.tokenId,
+          pool: `${active.token0Symbol}/${active.token1Symbol}`,
+          symbol1: active.token1Symbol,
+          price0In1: result.price0In1,
+          closedNetValueIn1: details.closedNetValueIn1,
+          realizedFeesIn1: details.realizedFeesIn1,
+          realizedPnlIn1: details.realizedPnlIn1,
+          gasCostIn1: active.gasCostIn1,
+          swapFeeIn1: active.swapFeeIn1,
+          closeReason: details.closeReason,
+          closeTxHash: details.closeTxHash,
+        }),
+        'success'
+      );
+      // Detailed summary already sent above.
     } catch (error) {
       console.error('Manual close error:', error);
       sendDiscordMessage(webhookUrl, `Manual close error: ${error}`, 'error');

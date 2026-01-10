@@ -71,13 +71,21 @@
                   <span class="stat-value inline profit-inline" id="profit-sub">-</span>
                 </p>
                 <p class="stat-sub" id="profit-detail">-</p>
-                <div class="ratio-bar" aria-hidden="true">
-                  <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl"></div>
-                  <div class="ratio-fill ratio-fees" id="profit-ratio-fees"></div>
-                  <div class="ratio-fill ratio-gas" id="profit-ratio-gas"></div>
-                  <div class="ratio-fill ratio-swap" id="profit-ratio-swap"></div>
+                <div class="ratio-stack" aria-hidden="true">
+                  <div class="ratio-bar ratio-positive">
+                    <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl-pos"></div>
+                    <div class="ratio-fill ratio-fees" id="profit-ratio-fees"></div>
+                  </div>
+                  <div class="ratio-bar ratio-negative">
+                    <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl-neg"></div>
+                    <div class="ratio-fill ratio-gas" id="profit-ratio-gas"></div>
+                    <div class="ratio-fill ratio-swap" id="profit-ratio-swap"></div>
+                  </div>
                 </div>
-                <p class="ratio-text" id="profit-ratio-text">-</p>
+                <div class="ratio-text profit-ratio-text">
+                  <div id="profit-ratio-text-positive">-</div>
+                  <div id="profit-ratio-text-negative">-</div>
+                </div>
               </article>
             </div>
           <div class="grid-bottom">
