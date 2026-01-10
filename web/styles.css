@@ -423,8 +423,8 @@ h1 {
 
 .grid-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  gap: 12px;
   margin-bottom: 26px;
   align-items: start;
 }
@@ -432,13 +432,13 @@ h1 {
 .grid-right {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 12px;
   min-width: 0;
 }
 
 .grid-left {
   display: grid;
-  gap: 20px;
+  gap: 12px;
   align-content: start;
   min-width: 0;
 }
@@ -446,25 +446,78 @@ h1 {
 .grid-top {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
+  gap: 12px;
 }
 
 .grid-bottom {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 20px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
 }
 
 .grid-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: 20px;
+  gap: 12px;
   min-width: 0;
 }
 
 @media (max-width: 1400px) {
   .grid-main {
     grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
+  }
+}
+
+@media (max-width: 3200px) and (min-width: 1101px) {
+  .grid-left {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .grid-top,
+  .grid-bottom,
+  .grid-charts {
+    display: contents;
+  }
+
+  #card-net {
+    order: 1;
+    grid-column: 1 / span 2;
+  }
+
+  #card-fees {
+    order: 2;
+    grid-column: 3 / span 2;
+  }
+
+  #card-profit {
+    order: 3;
+    grid-column: 5 / span 2;
+  }
+
+  #card-active {
+    order: 4;
+    grid-column: 1 / span 3;
+  }
+
+  #card-live {
+    order: 5;
+    grid-column: 4 / span 3;
+  }
+
+  #card-chart {
+    order: 7;
+    grid-column: 1 / span 3;
+  }
+
+  #card-fee-chart {
+    order: 8;
+    grid-column: 4 / span 3;
+  }
+
+  #card-logs {
+    order: 6;
+    grid-column: 1 / span 6;
   }
 }
 
@@ -482,13 +535,13 @@ h1 {
 }
 
 .chart-wrap {
-  flex: 1;
   min-height: 220px;
   border: none;
   border-radius: 6px;
   background: transparent;
   padding: 0;
   min-width: 0;
+  flex: 1;
 }
 
 #chart-meta {
@@ -566,6 +619,46 @@ h1 {
 .card h2,
 .card h3 {
   margin: 0;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.metric-list {
+  display: grid;
+  gap: 10px;
+}
+
+.metric-list.compact {
+  gap: 8px;
+}
+
+.metric-list .metric {
+  margin-bottom: 0;
+}
+
+.card-details {
+  margin-top: 10px;
+}
+
+.details-toggle {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--muted);
+  list-style: none;
+}
+
+.details-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.card-details[open] .details-toggle {
+  color: var(--ink);
 }
 
 .metric {
