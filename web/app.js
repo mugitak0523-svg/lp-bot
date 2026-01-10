@@ -63,6 +63,7 @@ const walletNativeLogo = document.getElementById('wallet-native-logo');
 const walletToken0Fallback = document.getElementById('wallet-token0-fallback');
 const walletToken1Fallback = document.getElementById('wallet-token1-fallback');
 const walletNativeFallback = document.getElementById('wallet-native-fallback');
+const tickRangeHintEl = document.getElementById('tick-range-price');
 
 const TOKEN_LOGOS = {
   eth: { id: 'token-eth', viewBox: '0 0 512 512' },
@@ -129,6 +130,50 @@ let lastPositionUsd = null;
 let lastRebalanceRemainingLabel = null;
 let lastRebalanceTotalLabel = null;
 let stopAfterAutoCloseValue = false;
+let poolPriceCache = null;
+let lastPoolPriceFetchMs = 0;
+
+function updateTickRangeHint() {
+  if (!tickRangeHintEl || !configForm) return;
+  const tickField = configForm.elements.namedItem('tickRange');
+  const tickRangeValue = tickField ? Number(tickField.value) : NaN;
+  if (!Number.isFinite(tickRangeValue) || tickRangeValue <= 0) {
+    tickRangeHintEl.textContent = '-';
+    return;
+  }
+  if (!Number.isFinite(lastPrice0In1) || !lastSymbol1) {
+    tickRangeHintEl.textContent = '-';
+    return;
+  }
+  const multiplier = Math.pow(1.0001, tickRangeValue);
+  const lower = lastPrice0In1 / multiplier;
+  const upper = lastPrice0In1 * multiplier;
+  tickRangeHintEl.textContent = `${formatNumber(lower, 1)} ~ ${formatNumber(upper, 1)} ${lastSymbol1}`;
+}
+
+async function refreshPoolPriceForRange() {
+  const now = Date.now();
+  if (poolPriceCache && now - lastPoolPriceFetchMs < 10000) {
+    lastPrice0In1 = poolPriceCache.price0In1 ?? lastPrice0In1;
+    lastSymbol0 = poolPriceCache.token0Symbol ?? lastSymbol0;
+    lastSymbol1 = poolPriceCache.token1Symbol ?? lastSymbol1;
+    updateTickRangeHint();
+    return;
+  }
+  try {
+    const data = await fetchJson('/pool/price');
+    if (Number.isFinite(data.price0In1)) {
+      lastPrice0In1 = data.price0In1;
+    }
+    lastSymbol0 = data.token0Symbol ?? lastSymbol0;
+    lastSymbol1 = data.token1Symbol ?? lastSymbol1;
+    poolPriceCache = data;
+    lastPoolPriceFetchMs = now;
+  } catch (error) {
+    return;
+  }
+  updateTickRangeHint();
+}
 
 function setProfitHeader() {
   if (!profitTotalEl) return;
@@ -214,6 +259,7 @@ function applyConfigToForm(config) {
   setField('stopLossPercent', config.stopLossPercent);
   setField('maxGasPriceGwei', config.maxGasPriceGwei);
   setField('targetTotalToken1', config.targetTotalToken1);
+  updateTickRangeHint();
 }
 
 function formatDuration(ms) {
@@ -499,6 +545,7 @@ async function loadStatus() {
     profitRatioGas.style.width = '34%';
     profitRatioText.textContent = '-';
     profitTotalEl.classList.remove('profit-positive', 'profit-negative');
+    await refreshPoolPriceForRange();
     return;
   }
 
@@ -510,6 +557,7 @@ async function loadStatus() {
   lastSymbol0 = data.symbol0 ?? null;
   lastSymbol1 = data.symbol1 ?? null;
   lastPositionUsd = isUsdSymbol(lastSymbol1) ? data.netValueIn1 ?? null : null;
+  updateTickRangeHint();
   netValueEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.symbol1}`;
   const pnlText = `${data.pnl >= 0 ? '+' : ''}${formatNumber(data.pnl, 2)} (${formatNumber(data.pnlPct, 1)}%)`;
   netPnlEl.textContent = pnlText;
@@ -950,6 +998,13 @@ async function loadActivePosition() {
   const isActive = data.status === 'active';
   createBtn.disabled = isActive;
   createHint.textContent = isActive ? 'Activeポジションがあるため作成できません' : '';
+}
+
+if (configForm) {
+  const tickField = configForm.elements.namedItem('tickRange');
+  if (tickField) {
+    tickField.addEventListener('input', updateTickRangeHint);
+  }
 }
 
 configForm.addEventListener('submit', async (event) => {

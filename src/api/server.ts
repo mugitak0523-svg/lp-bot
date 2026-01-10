@@ -20,6 +20,7 @@ import {
 import { getDb } from '../db/sqlite';
 import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
+import { loadPoolContext } from '../uniswap/pool';
 
 export type ApiActions = {
   rebalance?: () => Promise<void>;
@@ -40,6 +41,26 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       return;
     }
     res.json(snapshot);
+  });
+
+  app.get('/pool/price', async (_req, res) => {
+    try {
+      const settings = loadSettings();
+      const provider = createHttpProvider(settings.rpcUrl);
+      const poolContext = await loadPoolContext(provider, settings.poolAddress, settings.chainId);
+      const price0In1 = Number(poolContext.pool.token0Price.toSignificant(8));
+      res.json({
+        price0In1,
+        token0Symbol: poolContext.token0.symbol,
+        token1Symbol: poolContext.token1.symbol,
+        token0Decimals: poolContext.token0.decimals,
+        token1Decimals: poolContext.token1.decimals,
+        currentTick: poolContext.slot0.tick,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
   });
 
   app.get('/chart', async (req, res) => {
