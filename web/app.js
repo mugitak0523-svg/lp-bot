@@ -16,12 +16,11 @@ const profitTotalEl = document.getElementById('profit-total');
 const profitSubEl = document.getElementById('profit-sub');
 const profitDetailEl = document.getElementById('profit-detail');
 const profitRatioPnlPos = document.getElementById('profit-ratio-pnl-pos');
-const profitRatioFees = document.getElementById('profit-ratio-fees');
+const profitRatioFeesPos = document.getElementById('profit-ratio-fees-pos');
 const profitRatioPnlNeg = document.getElementById('profit-ratio-pnl-neg');
 const profitRatioGas = document.getElementById('profit-ratio-gas');
 const profitRatioSwap = document.getElementById('profit-ratio-swap');
-const profitRatioTextPositive = document.getElementById('profit-ratio-text-positive');
-const profitRatioTextNegative = document.getElementById('profit-ratio-text-negative');
+const profitRatioText = document.getElementById('profit-ratio-text');
 const profitRatioPositiveBar = document.getElementById('profit-ratio-positive');
 const profitRatioNegativeBar = document.getElementById('profit-ratio-negative');
 const ratioFill0 = document.getElementById('ratio-fill');
@@ -550,12 +549,13 @@ async function loadStatus() {
     updateProfitSub();
     profitDetailEl.textContent = '-';
     if (profitRatioPnlPos) profitRatioPnlPos.style.width = '0%';
+    if (profitRatioFeesPos) profitRatioFeesPos.style.width = '0%';
     if (profitRatioPnlNeg) profitRatioPnlNeg.style.width = '0%';
-    profitRatioFees.style.width = '0%';
-    profitRatioGas.style.width = '0%';
+    if (profitRatioGas) profitRatioGas.style.width = '0%';
     if (profitRatioSwap) profitRatioSwap.style.width = '0%';
-    if (profitRatioTextPositive) profitRatioTextPositive.textContent = '-';
-    if (profitRatioTextNegative) profitRatioTextNegative.textContent = '-';
+    if (profitRatioPositiveBar) profitRatioPositiveBar.style.width = '0%';
+    if (profitRatioNegativeBar) profitRatioNegativeBar.style.width = '0%';
+    if (profitRatioText) profitRatioText.textContent = '-';
     profitTotalEl.classList.remove('profit-positive', 'profit-negative');
     await refreshPoolPriceForRange();
     return;
@@ -640,53 +640,49 @@ async function loadStatus() {
   const feeValue = data.feeTotalIn1 ?? 0;
   profitDetailEl.textContent = `PnL ${formatNumber(pnlValue, 2)} + Fees ${formatNumber(feeValue, 2)} - Gas ${formatNumber(gasIn1, 4)} - Swap ${formatNumber(swapFeeIn1, 4)}`;
 
-  const gasSigned = -(gasIn1 ?? 0);
-  const swapSigned = -(swapFeeIn1 ?? 0);
   const pnlPos = Math.max(pnlValue, 0);
   const feePos = Math.max(feeValue, 0);
   const pnlNeg = Math.max(-pnlValue, 0);
   const feeNeg = Math.max(-feeValue, 0);
-  const gasNeg = Math.max(-gasSigned, 0);
-  const swapNeg = Math.max(-swapSigned, 0);
+  const gasAbs = Math.abs(gasIn1 ?? 0);
+  const swapAbs = Math.abs(swapFeeIn1 ?? 0);
 
   const posTotal = pnlPos + feePos;
-  const negTotal = pnlNeg + feeNeg + gasNeg + swapNeg;
-  const maxTotal = Math.max(posTotal, negTotal, 1);
-  const posScale = maxTotal > 0 ? posTotal / maxTotal : 0;
-  const negScale = maxTotal > 0 ? negTotal / maxTotal : 0;
+  const negTotal = pnlNeg + feeNeg + gasAbs + swapAbs;
+  const maxTotal = Math.max(posTotal, negTotal);
+  const posScale = maxTotal > 0 ? (posTotal / maxTotal) * 100 : 0;
+  const negScale = maxTotal > 0 ? (negTotal / maxTotal) * 100 : 0;
+
   const pnlPosRatio = posTotal > 0 ? (pnlPos / posTotal) * 100 : 0;
   const feePosRatio = posTotal > 0 ? (feePos / posTotal) * 100 : 0;
   const pnlNegRatio = negTotal > 0 ? (pnlNeg / negTotal) * 100 : 0;
-  const gasNegRatio = negTotal > 0 ? (gasNeg / negTotal) * 100 : 0;
-  const swapNegRatio = negTotal > 0 ? (swapNeg / negTotal) * 100 : 0;
+  const gasNegRatio = negTotal > 0 ? (gasAbs / negTotal) * 100 : 0;
+  const swapNegRatio = negTotal > 0 ? (swapAbs / negTotal) * 100 : 0;
 
   if (profitRatioPnlPos) profitRatioPnlPos.style.width = `${pnlPosRatio}%`;
+  if (profitRatioFeesPos) profitRatioFeesPos.style.width = `${feePosRatio}%`;
   if (profitRatioPnlNeg) profitRatioPnlNeg.style.width = `${pnlNegRatio}%`;
-  profitRatioFees.style.width = `${feePosRatio}%`;
-  profitRatioGas.style.width = `${gasNegRatio}%`;
-  if (profitRatioSwap) {
-    profitRatioSwap.style.width = `${swapNegRatio}%`;
-  }
+  if (profitRatioGas) profitRatioGas.style.width = `${gasNegRatio}%`;
+  if (profitRatioSwap) profitRatioSwap.style.width = `${swapNegRatio}%`;
   if (profitRatioPositiveBar) {
-    profitRatioPositiveBar.style.transform = `scaleX(${posScale})`;
+    profitRatioPositiveBar.style.width = `${posScale}%`;
   }
   if (profitRatioNegativeBar) {
-    profitRatioNegativeBar.style.transform = `scaleX(${negScale})`;
+    profitRatioNegativeBar.style.width = `${negScale}%`;
   }
 
-  if (profitRatioTextPositive) {
-    profitRatioTextPositive.textContent =
-      posTotal > 0
-        ? `PnL ${formatNumber(pnlPosRatio, 2)}% / Fees ${formatNumber(feePosRatio, 2)}%`
-        : '-';
-  }
-  if (profitRatioTextNegative) {
-    profitRatioTextNegative.textContent =
-      negTotal > 0
-        ? `PnL ${formatNumber(pnlNegRatio, 2)}% / Gas ${formatNumber(gasNegRatio, 2)}% / Swap ${formatNumber(
-            swapNegRatio,
+  if (profitRatioText) {
+    const totalAbs = posTotal + negTotal;
+    const pnlTotalRatio = totalAbs > 0 ? (Math.abs(pnlValue) / totalAbs) * 100 : 0;
+    const feeTotalRatio = totalAbs > 0 ? (Math.abs(feeValue) / totalAbs) * 100 : 0;
+    const gasTotalRatio = totalAbs > 0 ? (gasAbs / totalAbs) * 100 : 0;
+    const swapTotalRatio = totalAbs > 0 ? (swapAbs / totalAbs) * 100 : 0;
+    profitRatioText.textContent =
+      totalAbs > 0
+        ? `PnL ${formatNumber(pnlTotalRatio, 2)}% / Fees ${formatNumber(feeTotalRatio, 2)}% / Gas ${formatNumber(
+            gasTotalRatio,
             2
-          )}%`
+          )}% / Swap ${formatNumber(swapTotalRatio, 2)}%`
         : '-';
   }
   profitTotalEl.classList.toggle('profit-positive', profitTotal > 0);

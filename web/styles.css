@@ -365,6 +365,10 @@ h1 {
   margin-top: 10px;
 }
 
+.ratio-stack .ratio-bar {
+  margin-top: 0;
+}
+
 .ratio-positive,
 .ratio-negative {
   margin-top: 0;
