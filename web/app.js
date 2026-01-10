@@ -9,6 +9,7 @@ const activePriceEl = document.getElementById('active-price');
 const activeGasEl = document.getElementById('active-gas');
 const activeSwapFeeEl = document.getElementById('active-swap-fee');
 const activeStatusEl = document.getElementById('active-status');
+const activeDetailsEl = document.getElementById('active-details');
 const netValueEl = document.getElementById('net-value');
 const netPnlEl = document.getElementById('net-pnl');
 const feesEl = document.getElementById('fees');
@@ -41,6 +42,8 @@ const historyTodayChartEl = document.getElementById('history-today-chart');
 const historyTotalProfitEl = document.getElementById('history-total-profit');
 const historyTodayTotalEl = document.getElementById('history-today-total');
 const chartCanvas = document.getElementById('price-chart');
+const feeChartCanvas = document.getElementById('fee-chart');
+const feeChartMetaEl = document.getElementById('fee-chart-meta');
 const chartMetaEl = document.getElementById('chart-meta');
 let chartProfitEl = document.getElementById('chart-profit');
 const logStreamEl = document.getElementById('monitor-logs');
@@ -114,6 +117,7 @@ let activeSizeIn1 = null;
 let activeCreatedAtMs = null;
 let activeRangePriceLow = null;
 let activeRangePriceHigh = null;
+let activeEntryPrice = null;
 let stopLossPercentValue = null;
 let rebalanceDelaySecValue = null;
 let profitPctValue = null;
@@ -199,11 +203,28 @@ if (!chartProfitEl && chartCanvas) {
     chartProfitEl = span;
   }
 }
+
+if (activeDetailsEl) {
+  const summaryEl = activeDetailsEl.querySelector('summary');
+  const updateSummary = () => {
+    if (!summaryEl) return;
+    summaryEl.textContent = activeDetailsEl.open ? 'Hide details' : 'Show details';
+  };
+  updateSummary();
+  activeDetailsEl.addEventListener('toggle', updateSummary);
+}
 let historyProfitChart = null;
 let historyTodayChart = null;
 
 function formatNumber(value, digits = 4) {
   return Number(value).toFixed(digits);
+}
+
+function formatActiveValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '-';
+  const digits = Math.abs(numeric) < 1 ? 4 : 2;
+  return formatNumber(numeric, digits);
 }
 
 function formatSigned(value, digits = 4) {
@@ -235,6 +256,14 @@ function extractLogPrice(message) {
     return Number.isFinite(value) ? value : null;
   }
   return null;
+}
+
+function extractLogFeeTotal(message) {
+  if (!message) return null;
+  const match = message.match(/Total:\s*([0-9][0-9,]*\.?[0-9]*)/i);
+  if (!match) return null;
+  const value = Number.parseFloat(match[1].replace(/,/g, ''));
+  return Number.isFinite(value) ? value : null;
 }
 
 function tickToPrice(tick, token0Decimals, token1Decimals) {
@@ -603,7 +632,7 @@ async function loadStatus() {
   const inRange = data.status === 'IN RANGE';
   statusChip.textContent = data.status || 'active';
   statusChip.className = `status-pill ${inRange ? 'ok' : 'warn'}`;
-  priceEl.textContent = `1 ${data.symbol0} = ${formatNumber(data.price0In1, 4)} ${data.symbol1}`;
+  priceEl.textContent = `1 ${data.symbol0} = ${formatNumber(data.price0In1, 2)} ${data.symbol1}`;
   lastPrice0In1 = Number.isFinite(data.price0In1) ? data.price0In1 : null;
   lastSymbol0 = data.symbol0 ?? null;
   lastSymbol1 = data.symbol1 ?? null;
@@ -850,7 +879,7 @@ async function loadLogs() {
         ageLabel = ` (${seconds}s ago)`;
       }
     }
-    logStatusEl.textContent = `Last ${lastTime}${ageLabel}`;
+    logStatusEl.textContent = `Last ${lastTime}${ageLabel} (${entries.length})`;
   }
 
   const latestId = last?.id ?? null;
@@ -865,8 +894,18 @@ async function loadLogs() {
       })
       .filter((point) => point != null)
       .sort((a, b) => a.time - b.time);
+    const feePoints = entries
+      .map((entry) => {
+        const fee = extractLogFeeTotal(entry?.message);
+        const timeMs = entry?.timestamp ? Date.parse(entry.timestamp) : NaN;
+        if (!Number.isFinite(fee) || !Number.isFinite(timeMs)) return null;
+        return { time: Math.floor(timeMs / 1000), fee };
+      })
+      .filter((point) => point != null)
+      .sort((a, b) => a.time - b.time);
     // Render pool price chart from log buffer.
     renderPriceChart(points, 'No log data');
+    renderFeeChart(feePoints, 'No fee log data');
   }
 }
 
@@ -964,6 +1003,7 @@ async function loadWallet() {
 }
 
 let poolPriceChart = null;
+let feeLogChart = null;
 
 function renderPriceChart(points, meta) {
   if (!chartCanvas || !chartMetaEl || typeof window.Chart === 'undefined') return;
@@ -981,8 +1021,10 @@ function renderPriceChart(points, meta) {
   const values = points.map((point) => point.price);
   const rangeLow = Number.isFinite(activeRangePriceLow) ? activeRangePriceLow : null;
   const rangeHigh = Number.isFinite(activeRangePriceHigh) ? activeRangePriceHigh : null;
+  const entryPrice = Number.isFinite(activeEntryPrice) ? activeEntryPrice : null;
   const rangeLowData = rangeLow != null ? labels.map(() => rangeLow) : [];
   const rangeHighData = rangeHigh != null ? labels.map(() => rangeHigh) : [];
+  const entryData = entryPrice != null ? labels.map(() => entryPrice) : [];
 
   const inRangeLine = lastOutOfRange ? '#ef4444' : '#84cc16';
   const inRangeFill = lastOutOfRange ? 'rgba(239, 68, 68, 0.08)' : 'rgba(132, 204, 22, 0.08)';
@@ -1020,6 +1062,15 @@ function renderPriceChart(points, meta) {
             pointRadius: 0,
             borderDash: [6, 4],
           },
+          {
+            data: entryData,
+            borderColor: '#0f172a',
+            backgroundColor: 'transparent',
+            fill: false,
+            tension: 0,
+            pointRadius: 0,
+            borderDash: [2, 4],
+          },
         ],
       },
       options: {
@@ -1041,6 +1092,7 @@ function renderPriceChart(points, meta) {
     poolPriceChart.data.datasets[2].data = rangeHighData;
     poolPriceChart.data.datasets[2].borderColor = inRangeLine;
     poolPriceChart.data.datasets[2].backgroundColor = inRangeFill;
+    poolPriceChart.data.datasets[3].data = entryData;
     poolPriceChart.update();
   }
 
@@ -1050,6 +1102,108 @@ function renderPriceChart(points, meta) {
   const priceLabel = `${formatNumber(latest.price, 0)} ${symbol} @ ${timeLabel}`.trim();
   if (chartProfitEl) chartProfitEl.textContent = priceLabel;
   chartMetaEl.textContent = '';
+}
+
+function renderFeeChart(points, meta) {
+  if (!feeChartCanvas || !feeChartMetaEl || typeof window.Chart === 'undefined') return;
+  if (!Array.isArray(points) || points.length < 1) {
+    feeChartMetaEl.textContent = meta || 'No data';
+    if (feeLogChart) {
+      feeLogChart.data.labels = [];
+      feeLogChart.data.datasets[0].data = [];
+      feeLogChart.update();
+    }
+    return;
+  }
+
+  const now = Date.now();
+  const oldestMs = Math.min(...points.map((point) => point.time * 1000));
+  const spanMs = Math.max(0, now - oldestMs);
+  let bucketMinutes = 5;
+  if (spanMs >= 24 * 60 * 60 * 1000) {
+    bucketMinutes = 60;
+  } else if (spanMs >= 6 * 60 * 60 * 1000) {
+    bucketMinutes = 30;
+  } else if (spanMs >= 1 * 60 * 60 * 1000) {
+    bucketMinutes = 15;
+  }
+  const bucketSec = bucketMinutes * 60;
+  const buckets = new Map();
+  const sortedPoints = points
+    .slice()
+    .sort((a, b) => a.time - b.time);
+  let prevTotal = null;
+  let lastTotal = null;
+  sortedPoints.forEach((point) => {
+    const total = point.fee;
+    let delta = 0;
+    if (Number.isFinite(total) && Number.isFinite(prevTotal)) {
+      delta = total >= prevTotal ? total - prevTotal : 0;
+    }
+    prevTotal = total;
+    lastTotal = total;
+    const bucket = Math.floor(point.time / bucketSec) * bucketSec;
+    const prev = buckets.get(bucket) ?? 0;
+    buckets.set(bucket, prev + delta);
+  });
+  const sorted = Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]);
+  const labels = sorted.map(([time]) => formatChartTimeShort(time));
+  const values = sorted.map(([, fee]) => fee);
+  const cumulative = [];
+  let running = 0;
+  values.forEach((value) => {
+    running += value;
+    cumulative.push(running);
+  });
+  const finalTotal = Number.isFinite(lastTotal) ? lastTotal : running;
+  if (!feeLogChart) {
+    feeLogChart = new window.Chart(feeChartCanvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          {
+            data: values,
+            borderColor: '#f97316',
+            backgroundColor: 'rgba(249, 115, 22, 0.45)',
+            yAxisID: 'y',
+            borderWidth: 0,
+          },
+          {
+            type: 'line',
+            data: cumulative,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.12)',
+            pointRadius: 0,
+            borderWidth: 2,
+            tension: 0.25,
+            yAxisID: 'y1',
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6 } },
+          y: { ticks: { maxTicksLimit: 5 } },
+          y1: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { maxTicksLimit: 5 },
+          },
+        },
+      },
+    });
+  } else {
+    feeLogChart.data.labels = labels;
+    feeLogChart.data.datasets[0].data = values;
+    feeLogChart.data.datasets[1].data = cumulative;
+    feeLogChart.update();
+  }
+
+  feeChartMetaEl.textContent = `${bucketMinutes}m buckets / Total ${formatNumber(finalTotal, 4)}`;
 }
 
 async function loadChart() {
@@ -1076,6 +1230,7 @@ async function loadActivePosition() {
     activeCreatedAtMs = null;
     activeRangePriceLow = null;
     activeRangePriceHigh = null;
+    activeEntryPrice = null;
     lastActiveTokenId = null;
     outOfRangeStartMs = null;
     lastOutOfRange = false;
@@ -1102,7 +1257,7 @@ async function loadActivePosition() {
     const minPrice = Math.min(priceLower, priceUpper);
     const maxPrice = Math.max(priceLower, priceUpper);
     const priceDiff = maxPrice - minPrice;
-    activeRangePriceEl.textContent = `${formatNumber(minPrice, 4)} ~ ${formatNumber(maxPrice, 4)} ${data.token1Symbol} (${formatNumber(priceDiff, 4)} ${data.token1Symbol})`;
+    activeRangePriceEl.textContent = `${formatActiveValue(minPrice)} ~ ${formatActiveValue(maxPrice)} ${data.token1Symbol} (${formatActiveValue(priceDiff)} ${data.token1Symbol})`;
     activeRangePriceLow = minPrice;
     activeRangePriceHigh = maxPrice;
   } else {
@@ -1112,7 +1267,7 @@ async function loadActivePosition() {
   }
   const createdSize = Number(data.netValueIn1);
   activeSizeIn1 = Number.isFinite(createdSize) && createdSize > 0 ? createdSize : null;
-  activeSizeEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.token1Symbol}`;
+  activeSizeEl.textContent = `${formatActiveValue(data.netValueIn1)} ${data.token1Symbol}`;
   const positionConfig = {
     tickRange: data.configTickRange,
     rebalanceDelaySec: data.configRebalanceDelaySec,
@@ -1145,16 +1300,18 @@ async function loadActivePosition() {
   if (activeSizeIn1 != null && stopLossPercentValue != null) {
     const stopLossValue = activeSizeIn1 * (1 - stopLossPercentValue / 100);
     const stopDiff = activeSizeIn1 - stopLossValue;
-    activeStopLossEl.textContent = `${formatNumber(stopLossValue, 4)} ${data.token1Symbol} (${formatNumber(stopDiff, 4)} ${data.token1Symbol})`;
+    activeStopLossEl.textContent = `${formatActiveValue(stopLossValue)} ${data.token1Symbol} (${formatActiveValue(stopDiff)} ${data.token1Symbol})`;
   } else {
     activeStopLossEl.textContent = '-';
   }
-  activePriceEl.textContent = `1 ${data.token0Symbol} = ${formatNumber(data.price0In1, 4)} ${data.token1Symbol}`;
+  activePriceEl.textContent = `1 ${data.token0Symbol} = ${formatActiveValue(data.price0In1)} ${data.token1Symbol}`;
+  const entryPrice = Number(data.price0In1);
+  activeEntryPrice = Number.isFinite(entryPrice) ? entryPrice : null;
   activeGasEl.textContent =
-    data.gasCostIn1 != null ? `${formatNumber(data.gasCostIn1, 4)} ${data.token1Symbol}` : '-';
+    data.gasCostIn1 != null ? `${formatActiveValue(data.gasCostIn1)} ${data.token1Symbol}` : '-';
   if (activeSwapFeeEl) {
     activeSwapFeeEl.textContent =
-      data.swapFeeIn1 != null ? `${formatNumber(data.swapFeeIn1, 4)} ${data.token1Symbol}` : '-';
+      data.swapFeeIn1 != null ? `${formatActiveValue(data.swapFeeIn1)} ${data.token1Symbol}` : '-';
   }
   activeStatusEl.textContent = data.status;
   activeStatusEl.classList.toggle('status-active', data.status === 'active');

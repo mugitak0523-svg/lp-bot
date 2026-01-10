@@ -87,44 +87,50 @@
             </div>
           <div class="grid-bottom">
             <article class="card" id="card-active">
-            <h2 class="card-title">Active Position</h2>
-            <div class="metric">
-              <span class="label">Token ID</span>
-              <span class="value" id="active-token">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Size (created)</span>
-              <span class="value" id="active-size">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Range (tick)</span>
-              <span class="value" id="active-range">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Range (price)</span>
-              <span class="value" id="active-range-price">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Range (stop)</span>
-              <span class="value" id="active-stop-loss">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">ETH Price (created)</span>
-              <span class="value" id="active-price">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Gas (created)</span>
-              <span class="value" id="active-gas">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Swap Fee</span>
-              <span class="value" id="active-swap-fee">-</span>
-            </div>
-            <div class="metric">
-              <span class="label">Status</span>
-              <span class="value" id="active-status">-</span>
-            </div>
-          </article>
+              <div class="card-header">
+                <h2 class="card-title">Active Position</h2>
+                <span class="value status-pill" id="active-status">-</span>
+              </div>
+              <div class="metric-list compact">
+                <div class="metric">
+                  <span class="label">Token ID</span>
+                  <span class="value" id="active-token">-</span>
+                </div>
+                <div class="metric">
+                  <span class="label">Size (created)</span>
+                  <span class="value" id="active-size">-</span>
+                </div>
+                <div class="metric">
+                  <span class="label">Range (tick)</span>
+                  <span class="value" id="active-range">-</span>
+                </div>
+              </div>
+              <details class="card-details" id="active-details">
+                <summary class="details-toggle">Show details</summary>
+                <div class="metric-list">
+                  <div class="metric">
+                    <span class="label">Range (price)</span>
+                    <span class="value" id="active-range-price">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="label">Range (stop)</span>
+                    <span class="value" id="active-stop-loss">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="label">ETH Price (created)</span>
+                    <span class="value" id="active-price">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="label">Gas (created)</span>
+                    <span class="value" id="active-gas">-</span>
+                  </div>
+                  <div class="metric">
+                    <span class="label">Swap Fee</span>
+                    <span class="value" id="active-swap-fee">-</span>
+                  </div>
+                </div>
+              </details>
+            </article>
 
           <article class="card" id="card-live">
             <h2 class="card-title live-title">LIVE<span class="live-dot" aria-hidden="true"></span></h2>
@@ -136,6 +142,13 @@
               <span class="stat-value inline" id="rebalance-eta-remaining">-</span>
               <span class="stat-value inline" id="rebalance-eta-total">/ -</span>
             </p>
+          </article>
+          <article class="card log-card" id="card-logs">
+            <div class="chart-header">
+              <h2 class="card-title">Monitor Logs</h2>
+              <span class="stat-sub" id="log-status">-</span>
+            </div>
+            <pre class="log-stream" id="monitor-logs">-</pre>
           </article>
             </div>
           <div class="grid-charts">
@@ -149,12 +162,14 @@
               </div>
               <p class="stat-sub" id="chart-meta">-</p>
             </article>
-            <article class="card log-card" id="card-logs">
+            <article class="card chart-card" id="card-fee-chart">
               <div class="chart-header">
-                <h2 class="card-title">Monitor Logs</h2>
-                <span class="stat-sub" id="log-status">-</span>
+                <h2 class="card-title">Fees (Log)</h2>
+                <span class="stat-sub" id="fee-chart-meta">-</span>
               </div>
-              <pre class="log-stream" id="monitor-logs">-</pre>
+              <div class="chart-wrap">
+                <canvas id="fee-chart" height="200" aria-label="Fee chart"></canvas>
+              </div>
             </article>
           </div>
         </div>
