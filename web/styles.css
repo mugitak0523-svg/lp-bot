@@ -353,6 +353,22 @@ h1 {
   display: flex;
 }
 
+.ratio-stack {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.ratio-positive,
+.ratio-negative {
+  margin-top: 0;
+}
+
+.profit-ratio-text {
+  display: grid;
+  gap: 2px;
+}
+
 .ratio-fill {
   height: 100%;
 }
