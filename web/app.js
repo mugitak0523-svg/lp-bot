@@ -40,7 +40,7 @@ const historyProfitChartEl = document.getElementById('history-profit-chart');
 const historyTodayChartEl = document.getElementById('history-today-chart');
 const historyTotalProfitEl = document.getElementById('history-total-profit');
 const historyTodayTotalEl = document.getElementById('history-today-total');
-const chartSvg = document.getElementById('price-chart');
+const chartCanvas = document.getElementById('price-chart');
 const chartMetaEl = document.getElementById('chart-meta');
 let chartProfitEl = document.getElementById('chart-profit');
 const logStreamEl = document.getElementById('monitor-logs');
@@ -112,6 +112,8 @@ let activeSwapFeeIn1 = null;
 let activeSymbol1 = null;
 let activeSizeIn1 = null;
 let activeCreatedAtMs = null;
+let activeRangePriceLow = null;
+let activeRangePriceHigh = null;
 let stopLossPercentValue = null;
 let rebalanceDelaySecValue = null;
 let profitPctValue = null;
@@ -135,6 +137,7 @@ let lastRebalanceTotalLabel = null;
 let stopAfterAutoCloseValue = false;
 let poolPriceCache = null;
 let lastPoolPriceFetchMs = 0;
+let lastLogId = null;
 
 function updateTickRangeHint() {
   if (!tickRangeHintEl || !configForm) return;
@@ -185,7 +188,7 @@ function setProfitHeader() {
   profitTotalEl.textContent = base;
 }
 
-if (!chartProfitEl && chartSvg) {
+if (!chartProfitEl && chartCanvas) {
   const chartHeader = document.querySelector('#card-chart .chart-header');
   if (chartHeader) {
     const span = document.createElement('span');
@@ -211,6 +214,27 @@ function formatSigned(value, digits = 4) {
 function formatChartTime(epochSeconds) {
   const date = new Date(epochSeconds * 1000);
   return date.toLocaleString();
+}
+
+function formatChartTimeShort(epochSeconds) {
+  const date = new Date(epochSeconds * 1000);
+  return date.toLocaleString('ja-JP', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function extractLogPrice(message) {
+  if (!message) return null;
+  const lines = message.split('\n');
+  for (const line of lines) {
+    if (!line.trim().startsWith('Price')) continue;
+    const match = line.match(/=\s*([0-9][0-9,]*\.?[0-9]*)/);
+    if (!match) continue;
+    const value = Number.parseFloat(match[1].replace(/,/g, ''));
+    return Number.isFinite(value) ? value : null;
+  }
+  return null;
 }
 
 function tickToPrice(tick, token0Decimals, token1Decimals) {
@@ -315,6 +339,21 @@ function computeProfitValue(row) {
   }
   const swapFee = typeof row.swapFeeIn1 === 'number' ? row.swapFeeIn1 : 0;
   return row.realizedPnlIn1 + row.realizedFeesIn1 - row.gasCostIn1 - swapFee;
+}
+
+function computeInterestLabel(row) {
+  const profitValue = computeProfitValue(row);
+  if (profitValue == null || row.netValueIn1 == null) return '-';
+  const base = Number(row.netValueIn1);
+  if (!Number.isFinite(base) || base <= 0) return '-';
+  if (!row.createdAt || !row.closedAt) return '-';
+  const startMs = Date.parse(row.createdAt);
+  const endMs = Date.parse(row.closedAt);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) return '-';
+  const seconds = Math.max(1, (endMs - startMs) / 1000);
+  const rate = (profitValue / base) * 100;
+  const apr = rate * (365 * 24 * 60 * 60 / seconds);
+  return `${formatSigned(rate, 2)}% (${formatSigned(apr, 0)}%)`;
 }
 
 function setWinRateFromClosed(closed) {
@@ -616,9 +655,7 @@ async function loadStatus() {
   const swapFeeIn1 = activeSwapFeeIn1 ?? 0;
   const symbol1 = activeSymbol1 ?? data.symbol1 ?? '';
   const profitTotal = (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0) - gasIn1 - swapFeeIn1;
-  if (chartProfitEl) {
-    chartProfitEl.textContent = `Total Profit ${formatSigned(profitTotal, 4)} ${symbol1}`.trim();
-  }
+  // chart header shows latest pool price, not total profit.
   const baseSize = activeSizeIn1 ?? 0;
   const profitPct = baseSize > 0 ? (profitTotal / baseSize) * 100 : null;
   let aprPct = null;
@@ -732,6 +769,7 @@ async function loadHistory() {
       const profitValue = computeProfitValue(row);
       const profitLabel = profitValue != null ? `${formatSigned(profitValue, 4)} ${row.token1Symbol}` : '-';
       const profitClass = profitValue == null ? '' : profitValue >= 0 ? 'positive' : 'negative';
+      const interestLabel = computeInterestLabel(row);
       const closeReason = row.closeReason ?? '-';
       const closedAt = row.closedAt ? new Date(row.closedAt).toLocaleString() : '-';
       return `<tr>
@@ -744,6 +782,7 @@ async function loadHistory() {
         <td>${gas}</td>
         <td>${swapFee}</td>
         <td class="history-profit ${profitClass}">${profitLabel}</td>
+        <td>${interestLabel}</td>
         <td>${closeReason}</td>
         <td>${closedAt}</td>
         <td>
@@ -812,6 +851,22 @@ async function loadLogs() {
       }
     }
     logStatusEl.textContent = `Last ${lastTime}${ageLabel}`;
+  }
+
+  const latestId = last?.id ?? null;
+  if (latestId != null && latestId !== lastLogId) {
+    lastLogId = latestId;
+    const points = entries
+      .map((entry) => {
+        const price = extractLogPrice(entry?.message);
+        const timeMs = entry?.timestamp ? Date.parse(entry.timestamp) : NaN;
+        if (!Number.isFinite(price) || !Number.isFinite(timeMs)) return null;
+        return { time: Math.floor(timeMs / 1000), price };
+      })
+      .filter((point) => point != null)
+      .sort((a, b) => a.time - b.time);
+    // Render pool price chart from log buffer.
+    renderPriceChart(points, 'No log data');
   }
 }
 
@@ -908,50 +963,97 @@ async function loadWallet() {
   }
 }
 
+let poolPriceChart = null;
+
 function renderPriceChart(points, meta) {
-  if (!chartSvg) return;
-  chartSvg.innerHTML = '';
-  if (!Array.isArray(points) || points.length < 2) {
+  if (!chartCanvas || !chartMetaEl || typeof window.Chart === 'undefined') return;
+  if (!Array.isArray(points) || points.length < 1) {
     chartMetaEl.textContent = meta || 'No data';
+    if (poolPriceChart) {
+      poolPriceChart.data.labels = [];
+      poolPriceChart.data.datasets[0].data = [];
+      poolPriceChart.update();
+    }
     return;
   }
 
-  const values = points.map((p) => p.price);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const padding = 8;
-  const width = 640;
-  const height = 240;
-  const range = max - min || 1;
+  const labels = points.map((point) => formatChartTimeShort(point.time));
+  const values = points.map((point) => point.price);
+  const rangeLow = Number.isFinite(activeRangePriceLow) ? activeRangePriceLow : null;
+  const rangeHigh = Number.isFinite(activeRangePriceHigh) ? activeRangePriceHigh : null;
+  const rangeLowData = rangeLow != null ? labels.map(() => rangeLow) : [];
+  const rangeHighData = rangeHigh != null ? labels.map(() => rangeHigh) : [];
 
-  const path = points
-    .map((point, index) => {
-      const x = padding + (index / (points.length - 1)) * (width - padding * 2);
-      const y = padding + (1 - (point.price - min) / range) * (height - padding * 2);
-      return `${index === 0 ? 'M' : 'L'}${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(' ');
+  const inRangeLine = lastOutOfRange ? '#ef4444' : '#84cc16';
+  const inRangeFill = lastOutOfRange ? 'rgba(239, 68, 68, 0.08)' : 'rgba(132, 204, 22, 0.08)';
+  const priceLine = lastOutOfRange ? '#ef4444' : '#16a34a';
 
-  const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  pathEl.setAttribute('d', path);
-  pathEl.setAttribute('fill', 'none');
-  pathEl.setAttribute('stroke', '#f36a2b');
-  pathEl.setAttribute('stroke-width', '2');
-  pathEl.setAttribute('stroke-linecap', 'round');
-  chartSvg.appendChild(pathEl);
+  if (!poolPriceChart) {
+    poolPriceChart = new window.Chart(chartCanvas.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            data: values,
+            borderColor: priceLine,
+            backgroundColor: 'transparent',
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+          },
+          {
+            data: rangeLowData,
+            borderColor: inRangeLine,
+            backgroundColor: 'transparent',
+            fill: false,
+            tension: 0,
+            pointRadius: 0,
+            borderDash: [6, 4],
+          },
+          {
+            data: rangeHighData,
+            borderColor: inRangeLine,
+            backgroundColor: inRangeFill,
+            fill: '-1',
+            tension: 0,
+            pointRadius: 0,
+            borderDash: [6, 4],
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxTicksLimit: 6 } },
+          y: { ticks: { maxTicksLimit: 5 } },
+        },
+      },
+    });
+  } else {
+    poolPriceChart.data.labels = labels;
+    poolPriceChart.data.datasets[0].data = values;
+    poolPriceChart.data.datasets[0].borderColor = priceLine;
+    poolPriceChart.data.datasets[1].data = rangeLowData;
+    poolPriceChart.data.datasets[1].borderColor = inRangeLine;
+    poolPriceChart.data.datasets[2].data = rangeHighData;
+    poolPriceChart.data.datasets[2].borderColor = inRangeLine;
+    poolPriceChart.data.datasets[2].backgroundColor = inRangeFill;
+    poolPriceChart.update();
+  }
 
   const latest = points[points.length - 1];
-  chartMetaEl.textContent = `${formatNumber(latest.price, 4)} @ ${formatChartTime(latest.time)}`;
+  const symbol = lastSymbol1 ?? '';
+  const timeLabel = new Date(latest.time * 1000).toLocaleTimeString('ja-JP', { hour12: false });
+  const priceLabel = `${formatNumber(latest.price, 0)} ${symbol} @ ${timeLabel}`.trim();
+  if (chartProfitEl) chartProfitEl.textContent = priceLabel;
+  chartMetaEl.textContent = '';
 }
 
 async function loadChart() {
-  try {
-    const data = await fetchJson('/chart?interval=hour&limit=96');
-    renderPriceChart(data.points || [], data.meta);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Chart load failed';
-    chartMetaEl.textContent = message.length > 80 ? `${message.slice(0, 80)}...` : message;
-  }
+  renderPriceChart([], 'Waiting for log data');
 }
 
 async function loadActivePosition() {
@@ -972,6 +1074,8 @@ async function loadActivePosition() {
     activeSymbol1 = null;
     activeSizeIn1 = null;
     activeCreatedAtMs = null;
+    activeRangePriceLow = null;
+    activeRangePriceHigh = null;
     lastActiveTokenId = null;
     outOfRangeStartMs = null;
     lastOutOfRange = false;
@@ -999,8 +1103,12 @@ async function loadActivePosition() {
     const maxPrice = Math.max(priceLower, priceUpper);
     const priceDiff = maxPrice - minPrice;
     activeRangePriceEl.textContent = `${formatNumber(minPrice, 4)} ~ ${formatNumber(maxPrice, 4)} ${data.token1Symbol} (${formatNumber(priceDiff, 4)} ${data.token1Symbol})`;
+    activeRangePriceLow = minPrice;
+    activeRangePriceHigh = maxPrice;
   } else {
     activeRangePriceEl.textContent = '-';
+    activeRangePriceLow = null;
+    activeRangePriceHigh = null;
   }
   const createdSize = Number(data.netValueIn1);
   activeSizeIn1 = Number.isFinite(createdSize) && createdSize > 0 ? createdSize : null;
@@ -1121,7 +1229,7 @@ async function boot() {
   } catch (error) {
     console.error(error);
   }
-  loadChart().catch((error) => console.error(error));
+  // Pool price chart now uses log buffer updates.
   loadLogs().catch((error) => console.error(error));
   loadWallet().catch((error) => console.error(error));
   navItems.forEach((item) => {
@@ -1138,9 +1246,6 @@ async function boot() {
   setInterval(() => {
     loadWallet().catch((error) => console.error(error));
   }, 10000);
-  setInterval(() => {
-    loadChart().catch((error) => console.error(error));
-  }, 30000);
   setInterval(() => {
     loadLogs().catch((error) => console.error(error));
   }, 5000);
