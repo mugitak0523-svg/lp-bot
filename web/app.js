@@ -754,7 +754,19 @@ async function loadLogs() {
     const lastTime = new Date(last.timestamp).toLocaleTimeString();
     const ageMs = Date.now() - Date.parse(last.timestamp);
     const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.floor(ageMs / 1000)) : null;
-    const ageLabel = ageSec == null ? '' : ` (${ageSec} s ago)`;
+    let ageLabel = '';
+    if (ageSec != null) {
+      const hours = Math.floor(ageSec / 3600);
+      const minutes = Math.floor((ageSec % 3600) / 60);
+      const seconds = ageSec % 60;
+      if (hours > 0) {
+        ageLabel = ` (${hours}h ${minutes}m ${seconds}s ago)`;
+      } else if (minutes > 0) {
+        ageLabel = ` (${minutes}m ${seconds}s ago)`;
+      } else {
+        ageLabel = ` (${seconds}s ago)`;
+      }
+    }
     logStatusEl.textContent = `Last ${lastTime}${ageLabel}`;
   }
 }
