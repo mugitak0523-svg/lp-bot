@@ -148,7 +148,8 @@ function updateTickRangeHint() {
   const multiplier = Math.pow(1.0001, tickRangeValue);
   const lower = lastPrice0In1 / multiplier;
   const upper = lastPrice0In1 * multiplier;
-  tickRangeHintEl.textContent = `${formatNumber(lower, 1)} ~ ${formatNumber(upper, 1)} ${lastSymbol1}`;
+  const diff = upper - lower;
+  tickRangeHintEl.textContent = `${formatNumber(lower, 1)} ~ ${formatNumber(upper, 1)} ${lastSymbol1} (${formatNumber(diff, 1)} ${lastSymbol1})`;
 }
 
 async function refreshPoolPriceForRange() {
@@ -922,7 +923,9 @@ async function loadActivePosition() {
     lastOutOfRange = false;
   }
   activeTokenEl.textContent = data.tokenId;
-  activeRangeEl.textContent = `tick ${data.tickLower} ~ ${data.tickUpper}`;
+  const tickRangeLabel =
+    typeof data.configTickRange === 'number' ? ` (±${data.configTickRange})` : '';
+  activeRangeEl.textContent = `${data.tickLower} ~ ${data.tickUpper}${tickRangeLabel}`;
   const tickLower = Number(data.tickLower);
   const tickUpper = Number(data.tickUpper);
   const dec0 = Number(data.token0Decimals);
@@ -932,7 +935,8 @@ async function loadActivePosition() {
     const priceUpper = tickToPrice(tickUpper, dec0, dec1);
     const minPrice = Math.min(priceLower, priceUpper);
     const maxPrice = Math.max(priceLower, priceUpper);
-    activeRangePriceEl.textContent = `${formatNumber(minPrice, 4)} ~ ${formatNumber(maxPrice, 4)} ${data.token1Symbol}`;
+    const priceDiff = maxPrice - minPrice;
+    activeRangePriceEl.textContent = `${formatNumber(minPrice, 4)} ~ ${formatNumber(maxPrice, 4)} ${data.token1Symbol} (${formatNumber(priceDiff, 4)} ${data.token1Symbol})`;
   } else {
     activeRangePriceEl.textContent = '-';
   }
@@ -970,7 +974,8 @@ async function loadActivePosition() {
   }
   if (activeSizeIn1 != null && stopLossPercentValue != null) {
     const stopLossValue = activeSizeIn1 * (1 - stopLossPercentValue / 100);
-    activeStopLossEl.textContent = `${formatNumber(stopLossValue, 4)} ${data.token1Symbol}`;
+    const stopDiff = activeSizeIn1 - stopLossValue;
+    activeStopLossEl.textContent = `${formatNumber(stopLossValue, 4)} ${data.token1Symbol} (${formatNumber(stopDiff, 4)} ${data.token1Symbol})`;
   } else {
     activeStopLossEl.textContent = '-';
   }
