@@ -11,6 +11,7 @@ export type MonitorSnapshot = {
   tickUpper: number;
   currentTick: number;
   outOfRange?: boolean;
+  outOfRangeStartAt?: string | null;
   rebalanceRemainingSec?: number | null;
   ratio0: number;
   ratio1: number;

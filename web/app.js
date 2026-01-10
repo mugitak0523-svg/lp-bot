@@ -586,7 +586,10 @@ async function loadStatus() {
   const parsedTime = data.timestamp ? Date.parse(data.timestamp) : NaN;
   lastStatusTimeMs = Number.isFinite(parsedTime) ? parsedTime : Date.now();
   if (lastOutOfRange) {
-    if (!wasOutOfRange || outOfRangeStartMs == null) {
+    const parsedStart = data.outOfRangeStartAt ? Date.parse(data.outOfRangeStartAt) : NaN;
+    if (Number.isFinite(parsedStart)) {
+      outOfRangeStartMs = parsedStart;
+    } else if (!wasOutOfRange || outOfRangeStartMs == null) {
       outOfRangeStartMs = lastStatusTimeMs;
     }
     const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);

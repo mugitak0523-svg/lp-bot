@@ -108,6 +108,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
   setSnapshot({
     ...snapshot,
     outOfRange,
+    outOfRangeStartAt: state.outOfRangeSince ? new Date(state.outOfRangeSince).toISOString() : null,
     rebalanceRemainingSec: remainingSec,
   });
 
