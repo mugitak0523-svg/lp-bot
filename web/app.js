@@ -752,7 +752,10 @@ async function loadLogs() {
   const last = entries[entries.length - 1];
   if (logStatusEl && last?.timestamp) {
     const lastTime = new Date(last.timestamp).toLocaleTimeString();
-    logStatusEl.textContent = `Last ${lastTime}`;
+    const ageMs = Date.now() - Date.parse(last.timestamp);
+    const ageSec = Number.isFinite(ageMs) ? Math.max(0, Math.floor(ageMs / 1000)) : null;
+    const ageLabel = ageSec == null ? '' : ` (${ageSec} s ago)`;
+    logStatusEl.textContent = `Last ${lastTime}${ageLabel}`;
   }
 }
 

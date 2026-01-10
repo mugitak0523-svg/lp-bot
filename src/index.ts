@@ -35,6 +35,15 @@ const state = {
   monitorController: null as MonitorController | null,
 };
 
+function resolveRebalanceConfig(active: Awaited<ReturnType<typeof getLatestActivePosition>>) {
+  const fallback = getConfig();
+  return {
+    tickRange: active?.configTickRange ?? fallback.tickRange,
+    slippageBps: active?.configSlippageBps ?? fallback.slippageBps,
+    targetTotalToken1: active?.configTargetTotalToken1 ?? fallback.targetTotalToken1,
+  };
+}
+
 function toPositionRecord(result: RebalanceResult) {
   const now = new Date().toISOString();
   const config = getConfig();
@@ -192,13 +201,14 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       if (!active) {
         throw new Error('active position not found');
       }
+      const rebalanceConfig = resolveRebalanceConfig(active);
       const direction = snapshot.currentTick > snapshot.tickUpper ? 'upper' : 'lower';
       const result = await runRebalance(
         {
           tokenId: active.tokenId,
-          tickRange: config.tickRange,
-          slippageToleranceBps: config.slippageBps,
-          targetTotalToken1: config.targetTotalToken1,
+          tickRange: rebalanceConfig.tickRange,
+          slippageToleranceBps: rebalanceConfig.slippageBps,
+          targetTotalToken1: rebalanceConfig.targetTotalToken1,
         },
         'auto'
       );
@@ -240,12 +250,13 @@ const apiActions = {
       if (!active) {
         throw new Error('active position not found');
       }
+      const rebalanceConfig = resolveRebalanceConfig(active);
       const result = await runRebalance(
         {
           tokenId: active.tokenId,
-          tickRange: getConfig().tickRange,
-          slippageToleranceBps: getConfig().slippageBps,
-          targetTotalToken1: getConfig().targetTotalToken1,
+          tickRange: rebalanceConfig.tickRange,
+          slippageToleranceBps: rebalanceConfig.slippageBps,
+          targetTotalToken1: rebalanceConfig.targetTotalToken1,
         },
         'manual'
       );
