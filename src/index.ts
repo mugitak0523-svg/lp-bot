@@ -186,7 +186,8 @@ function toPositionRecord(result: RebalanceResult, configOverride?: ReturnType<t
 }
 
 async function handleSnapshot(snapshot: MonitorSnapshot) {
-  const config = getConfig();
+  const activeForConfig = await getLatestActivePosition(db);
+  const config = resolveActiveConfig(activeForConfig);
 
   if (!state.initialNetValue) {
     const active = await getLatestActivePosition(db);
@@ -278,7 +279,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
     if (config.stopAfterAutoClose) {
       state.rebalancing = true;
       try {
-        const active = await getLatestActivePosition(db);
+        const active = activeForConfig;
         if (!active) {
           throw new Error('active position not found');
         }

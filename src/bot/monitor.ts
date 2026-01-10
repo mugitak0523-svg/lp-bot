@@ -179,7 +179,8 @@ export async function startMonitor(
           `Net   : ${netValueIn1.toFixed(4)} ${sym1} (PnL ${formatSigned(pnl)} ${sym1}, ${formatSigned(pnlPct, 2)}%)`,
           `Fees  : ${feesText}`,
         ].join('\n'),
-        snapshotTime
+        snapshotTime,
+        tokenId
       );
 
       callbacks.onSnapshot?.({
