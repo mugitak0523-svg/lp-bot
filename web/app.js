@@ -932,7 +932,10 @@ async function loadLogs() {
       })
       .filter((point) => point != null)
       .sort((a, b) => a.time - b.time);
-    const feePoints = entries
+    const feeSourceEntries = lastActiveTokenId
+      ? entries.filter((entry) => entry?.tokenId === lastActiveTokenId)
+      : entries;
+    const feePoints = feeSourceEntries
       .map((entry) => {
         const fee = extractLogFeeTotal(entry?.message);
         const timeMs = entry?.timestamp ? Date.parse(entry.timestamp) : NaN;
