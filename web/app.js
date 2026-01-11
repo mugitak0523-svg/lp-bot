@@ -70,6 +70,7 @@ const walletToken0Fallback = document.getElementById('wallet-token0-fallback');
 const walletToken1Fallback = document.getElementById('wallet-token1-fallback');
 const walletNativeFallback = document.getElementById('wallet-native-fallback');
 const tickRangeHintEl = document.getElementById('tick-range-price');
+const stopLossPreviewEl = document.getElementById('stop-loss-preview');
 
 const TOKEN_LOGOS = {
   eth: { id: 'token-eth', viewBox: '0 0 512 512' },
@@ -160,6 +161,24 @@ function updateTickRangeHint() {
   const upper = lastPrice0In1 * multiplier;
   const diff = upper - lower;
   tickRangeHintEl.textContent = `${formatNumber(lower, 1)} ~ ${formatNumber(upper, 1)} ${lastSymbol1} (${formatNumber(diff, 1)} ${lastSymbol1})`;
+}
+
+function updateStopLossPreview() {
+  if (!stopLossPreviewEl || !configForm) return;
+  const stopLossField = configForm.elements.namedItem('stopLossPercent');
+  const sizeField = configForm.elements.namedItem('targetTotalToken1');
+  const stopLossPercent = stopLossField ? Number(stopLossField.value) : NaN;
+  const sizeInput = sizeField ? Number(sizeField.value) : NaN;
+  const baseSize =
+    activeSizeIn1 != null && Number.isFinite(activeSizeIn1) ? activeSizeIn1 : sizeInput;
+  if (!Number.isFinite(stopLossPercent) || !Number.isFinite(baseSize)) {
+    stopLossPreviewEl.textContent = '-';
+    return;
+  }
+  const stopValue = baseSize * (1 - stopLossPercent / 100);
+  const diff = baseSize - stopValue;
+  const symbol = activeSymbol1 ?? lastSymbol1 ?? '';
+  stopLossPreviewEl.textContent = `${formatActiveValue(stopValue)} ${symbol} (${formatActiveValue(diff)} ${symbol})`;
 }
 
 async function refreshPoolPriceForRange() {
@@ -1304,6 +1323,7 @@ async function loadActivePosition() {
   } else {
     activeStopLossEl.textContent = '-';
   }
+  updateStopLossPreview();
   activePriceEl.textContent = `1 ${data.token0Symbol} = ${formatActiveValue(data.price0In1)} ${data.token1Symbol}`;
   const entryPrice = Number(data.price0In1);
   activeEntryPrice = Number.isFinite(entryPrice) ? entryPrice : null;
@@ -1336,6 +1356,14 @@ if (configForm) {
   const tickField = configForm.elements.namedItem('tickRange');
   if (tickField) {
     tickField.addEventListener('input', updateTickRangeHint);
+  }
+  const stopLossField = configForm.elements.namedItem('stopLossPercent');
+  if (stopLossField) {
+    stopLossField.addEventListener('input', updateStopLossPreview);
+  }
+  const sizeField = configForm.elements.namedItem('targetTotalToken1');
+  if (sizeField) {
+    sizeField.addEventListener('input', updateStopLossPreview);
   }
 }
 
