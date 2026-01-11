@@ -714,7 +714,7 @@ async function loadStatus() {
       if (feePopTimeout) clearTimeout(feePopTimeout);
       feePopTimeout = setTimeout(() => {
         feesAmountEl.classList.remove('fees-pop');
-      }, 1100);
+      }, 1500);
       feesDeltaEl.textContent = `+${formatNumber(delta, 4)}`;
       feesDeltaEl.classList.remove('hidden');
       if (feeDeltaTimeout) clearTimeout(feeDeltaTimeout);
