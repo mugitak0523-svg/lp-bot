@@ -317,10 +317,14 @@ h1 {
   font-size: 1.5rem;
   font-weight: 700;
   color: #472d1f;
+  min-height: 1.9rem;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .stat-value.inline {
-  display: inline;
+  display: inline-flex;
   margin: 0;
 }
 
