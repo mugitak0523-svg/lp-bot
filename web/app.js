@@ -15,6 +15,7 @@ const netPnlEl = document.getElementById('net-pnl');
 const feesAmountEl = document.getElementById('fees-amount');
 const feesYieldEl = document.getElementById('fees-yield');
 const feesDeltaEl = document.getElementById('fees-delta');
+const feesRecentEl = document.getElementById('fees-recent');
 const profitTotalEl = document.getElementById('profit-total');
 const profitSubEl = document.getElementById('profit-sub');
 const profitDetailEl = document.getElementById('profit-detail');
@@ -152,6 +153,9 @@ let lastFeeTotalIn1 = null;
 let feeDeltaTimeout = null;
 let feePopTimeout = null;
 const MIN_FEE_DELTA_DISPLAY = 0.00005;
+let lastFeeIncreaseAtMs = null;
+let lastFeeIncreaseDelta = null;
+let activeRebalanceDelaySec = null;
 
 function updateTickRangeHint() {
   if (!tickRangeHintEl || !configForm) return;
@@ -385,8 +389,7 @@ function formatDuration(ms) {
   const seconds = totalSeconds % 60;
   const pad2 = (value) => String(value).padStart(2, '0');
   if (days > 0) return `${days}d ${pad2(hours)}h ${pad2(minutes)}m ${pad2(seconds)}s`;
-  if (hours > 0) return `${pad2(hours)}h ${pad2(minutes)}m ${pad2(seconds)}s`;
-  return `${pad2(minutes)}m ${pad2(seconds)}s`;
+  return `${pad2(hours)}h ${pad2(minutes)}m ${pad2(seconds)}s`;
 }
 
 function formatRebalanceRemaining(rawRemainingSec) {
@@ -407,7 +410,7 @@ function setRebalanceLabels(remainingLabel, totalLabel) {
       lastRebalanceRemainingLabel = remainingLabel;
       rebalanceEtaRemainingEl.textContent = remainingLabel;
     }
-    const delaySec = rebalanceDelaySecValue ?? 0;
+    const delaySec = getRebalanceDelaySec();
     const remainingSec = lastRebalanceRemainingSec ?? null;
     const shouldWarn = delaySec > 0 && typeof remainingSec === 'number' && remainingSec > 0 && remainingSec <= delaySec * 0.1;
     rebalanceEtaRemainingEl.classList.toggle('warn', shouldWarn);
@@ -418,6 +421,11 @@ function setRebalanceLabels(remainingLabel, totalLabel) {
       rebalanceEtaTotalEl.textContent = totalLabel;
     }
   }
+}
+
+function getRebalanceDelaySec() {
+  if (typeof activeRebalanceDelaySec === 'number') return activeRebalanceDelaySec;
+  return typeof rebalanceDelaySecValue === 'number' ? rebalanceDelaySecValue : 0;
 }
 
 function computeProfitValue(row) {
@@ -551,8 +559,18 @@ function updateHistoryCharts(closed) {
   const todayValues = todayBuckets.map((value) => Number(value.toFixed(4)));
   if (historyTodayTotalEl) {
     const todayTotal = todayBuckets.reduce((acc, value) => acc + value, 0);
-    const aprValue = computeHistoryApr(closed);
-    const winRateText = winRateCache == null ? '-' : `${formatNumber(winRateCache, 1)}%`;
+    const todayKey = new Date().toDateString();
+    const todayClosed = closed.filter((row) => {
+      if (!row.closedAt) return false;
+      return new Date(row.closedAt).toDateString() === todayKey;
+    });
+    const aprValue = computeHistoryApr(todayClosed);
+    const wins = todayClosed.filter((row) => {
+      const profit = computeProfitValue(row);
+      return profit != null && profit > 0;
+    }).length;
+    const winRate = todayClosed.length > 0 ? (wins / todayClosed.length) * 100 : null;
+    const winRateText = winRate == null ? '-' : `${formatNumber(winRate, 1)}%`;
     const aprText = aprValue == null ? '-' : `${formatNumber(aprValue, 1)}%`;
     historyTodayTotalEl.textContent = `Total ${formatSigned(todayTotal, 4)} (Win : ${winRateText} / APR : ${aprText})`;
   }
@@ -668,7 +686,7 @@ async function loadStatus() {
     feeRatioText.textContent = '-';
     createdPriceEl.textContent = '-';
     holdTimeEl.textContent = '-';
-    setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
+    setRebalanceLabels('-', formatRebalanceTotal(getRebalanceDelaySec()));
     createdAtEl.textContent = '-';
     if (chartProfitEl) {
       chartProfitEl.textContent = '-';
@@ -720,9 +738,19 @@ async function loadStatus() {
     feesYieldEl.textContent =
       feeTotalValue != null ? `(+${formatNumber(data.feeYieldPct, 2)}%)` : '-';
   }
+  if (feesRecentEl) {
+    if (lastFeeIncreaseAtMs && lastFeeIncreaseDelta != null) {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - lastFeeIncreaseAtMs) / 1000));
+      feesRecentEl.textContent = `(+${formatNumber(lastFeeIncreaseDelta, 4)}, ${elapsedSec}s ago)`;
+    } else {
+      feesRecentEl.textContent = '-';
+    }
+  }
   if (feeTotalValue != null && Number.isFinite(lastFeeTotalIn1)) {
     const delta = feeTotalValue - lastFeeTotalIn1;
     if (delta >= MIN_FEE_DELTA_DISPLAY && feesAmountEl && feesDeltaEl) {
+      lastFeeIncreaseAtMs = Date.now();
+      lastFeeIncreaseDelta = delta;
       feesAmountEl.classList.remove('fees-pop');
       // Restart animation.
       void feesAmountEl.offsetWidth;
@@ -740,6 +768,12 @@ async function loadStatus() {
     }
   }
   lastFeeTotalIn1 = feeTotalValue;
+  if (feesDeltaEl) {
+    if (lastFeeIncreaseAtMs && lastFeeIncreaseDelta != null) {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - lastFeeIncreaseAtMs) / 1000));
+      feesDeltaEl.textContent = `+${formatNumber(lastFeeIncreaseDelta, 4)}, ${elapsedSec}s ago`;
+    }
+  }
   const ratio0 = Math.max(0, Math.min(100, data.ratio0 ?? 0));
   const ratio1 = Math.max(0, Math.min(100, 100 - ratio0));
   ratioFill0.style.width = `${ratio0}%`;
@@ -769,12 +803,12 @@ async function loadStatus() {
       outOfRangeStartMs = lastStatusTimeMs;
     }
     const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
-    const delaySec = rebalanceDelaySecValue ?? 0;
+    const delaySec = getRebalanceDelaySec();
     const rawRemaining = delaySec - elapsed;
     setRebalanceLabels(formatRebalanceRemaining(rawRemaining), formatRebalanceTotal(delaySec));
   } else {
     outOfRangeStartMs = null;
-    setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
+    setRebalanceLabels('-', formatRebalanceTotal(getRebalanceDelaySec()));
   }
 
   updateStopLossPreview();
@@ -899,7 +933,15 @@ async function loadHistory() {
       const profitClass = profitValue == null ? '' : profitValue >= 0 ? 'positive' : 'negative';
       const interestLabel = computeInterestLabel(row);
       const closeReason = row.closeReason ?? '-';
-      const closedAt = row.closedAt ? new Date(row.closedAt).toLocaleString() : '-';
+      let closedAt = row.closedAt ? new Date(row.closedAt).toLocaleString() : '-';
+      if (row.createdAt && row.closedAt) {
+        const startMs = Date.parse(row.createdAt);
+        const endMs = Date.parse(row.closedAt);
+        if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+          const holdMs = endMs - startMs;
+          closedAt = `${closedAt} (${formatDuration(holdMs)})`;
+        }
+      }
       return `<tr>
         <td>${tokenId}</td>
         <td>${range}</td>
@@ -1403,6 +1445,7 @@ async function loadActivePosition() {
     activeRangePriceLow = null;
     activeRangePriceHigh = null;
     activeEntryPrice = null;
+    activeRebalanceDelaySec = null;
     lastActiveTokenId = null;
     outOfRangeStartMs = null;
     lastOutOfRange = false;
@@ -1457,7 +1500,9 @@ async function loadActivePosition() {
     lastTickRangeValue = data.configTickRange;
   }
   if (typeof data.configRebalanceDelaySec === 'number') {
-    rebalanceDelaySecValue = data.configRebalanceDelaySec;
+    activeRebalanceDelaySec = data.configRebalanceDelaySec;
+  } else {
+    activeRebalanceDelaySec = null;
   }
   if (data.configStopAfterAutoClose != null) {
     stopAfterAutoCloseValue = Boolean(data.configStopAfterAutoClose);
@@ -1600,11 +1645,21 @@ async function boot() {
     }
     if (lastOutOfRange && outOfRangeStartMs != null) {
       const elapsed = Math.floor((Date.now() - outOfRangeStartMs) / 1000);
-      const delaySec = rebalanceDelaySecValue ?? 0;
+      const delaySec = getRebalanceDelaySec();
       const rawRemaining = delaySec - elapsed;
       setRebalanceLabels(formatRebalanceRemaining(rawRemaining), formatRebalanceTotal(delaySec));
     } else {
-      setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
+      setRebalanceLabels('-', formatRebalanceTotal(getRebalanceDelaySec()));
+    }
+    if (feesDeltaEl && lastFeeIncreaseAtMs && lastFeeIncreaseDelta != null) {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - lastFeeIncreaseAtMs) / 1000));
+      feesDeltaEl.textContent = `+${formatNumber(lastFeeIncreaseDelta, 4)}`;
+    }
+    if (feesRecentEl) {
+      if (lastFeeIncreaseAtMs && lastFeeIncreaseDelta != null) {
+        const elapsedSec = Math.max(0, Math.floor((Date.now() - lastFeeIncreaseAtMs) / 1000));
+        feesRecentEl.textContent = `(+${formatNumber(lastFeeIncreaseDelta, 4)}, ${elapsedSec}s ago)`;
+      }
     }
   }, 1000);
   setInterval(() => {

@@ -351,6 +351,11 @@ h1 {
   display: none;
 }
 
+#fees-recent {
+  color: #9ca3af;
+  font-size: 0.85rem;
+}
+
 .fees-delta.hidden {
   display: none;
 }
