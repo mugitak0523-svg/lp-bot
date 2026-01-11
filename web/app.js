@@ -692,7 +692,12 @@ async function loadStatus() {
   netPnlEl.classList.remove('hidden');
   const feeTotalValue = Number.isFinite(data.feeTotalIn1) ? data.feeTotalIn1 : null;
   if (feesAmountEl) {
-    feesAmountEl.textContent = feeTotalValue != null ? `${formatNumber(feeTotalValue, 4)} ${data.symbol1}` : '-';
+    const deltaText =
+      feeTotalValue != null && Number.isFinite(lastFeeTotalIn1)
+        ? `+${formatNumber(Math.max(0, feeTotalValue - lastFeeTotalIn1), 4)} `
+        : '';
+    feesAmountEl.textContent =
+      feeTotalValue != null ? `${deltaText}${formatNumber(feeTotalValue, 4)} ${data.symbol1}` : '-';
   }
   if (feesYieldEl) {
     feesYieldEl.textContent =
@@ -708,8 +713,8 @@ async function loadStatus() {
       if (feePopTimeout) clearTimeout(feePopTimeout);
       feePopTimeout = setTimeout(() => {
         feesAmountEl.classList.remove('fees-pop');
-      }, 700);
-      feesDeltaEl.textContent = `+${formatNumber(delta, 2)}`;
+      }, 1100);
+      feesDeltaEl.textContent = `+${formatNumber(delta, 4)}`;
       feesDeltaEl.classList.remove('hidden');
       if (feeDeltaTimeout) clearTimeout(feeDeltaTimeout);
       feeDeltaTimeout = setTimeout(() => {
