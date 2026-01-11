@@ -135,6 +135,8 @@ let lastProfitLabel = null;
 let lastPrice0In1 = null;
 let lastSymbol0 = null;
 let lastSymbol1 = null;
+let lastAmount0 = null;
+let lastAmount1 = null;
 let lastActiveTokenId = null;
 let lastPositionUsd = null;
 let lastRebalanceRemainingLabel = null;
@@ -178,7 +180,20 @@ function updateStopLossPreview() {
   const stopValue = baseSize * (1 - stopLossPercent / 100);
   const diff = baseSize - stopValue;
   const symbol = activeSymbol1 ?? lastSymbol1 ?? '';
-  stopLossPreviewEl.textContent = `${formatActiveValue(stopValue)} ${symbol} (${formatActiveValue(diff)} ${symbol})`;
+  let stopPriceText = '-';
+  if (Number.isFinite(lastAmount0) && Number.isFinite(lastAmount1) && lastAmount0 > 0) {
+    const priceStop = (stopValue - lastAmount1) / lastAmount0;
+    if (Number.isFinite(priceStop) && priceStop > 0) {
+      const token0 = lastSymbol0 ?? '';
+      let priceDiffText = '';
+      if (Number.isFinite(lastPrice0In1)) {
+        const priceDiff = priceStop - lastPrice0In1;
+        priceDiffText = ` (${formatActiveValue(priceDiff)} ${symbol})`;
+      }
+      stopPriceText = `1 ${token0} = ${formatActiveValue(priceStop)} ${symbol}${priceDiffText}`.trim();
+    }
+  }
+  stopLossPreviewEl.textContent = `${formatActiveValue(stopValue)} ${symbol} (${formatActiveValue(diff)} ${symbol}) / ${stopPriceText}`;
 }
 
 async function refreshPoolPriceForRange() {
@@ -655,6 +670,8 @@ async function loadStatus() {
   lastPrice0In1 = Number.isFinite(data.price0In1) ? data.price0In1 : null;
   lastSymbol0 = data.symbol0 ?? null;
   lastSymbol1 = data.symbol1 ?? null;
+  lastAmount0 = Number.isFinite(data.amount0) ? data.amount0 : null;
+  lastAmount1 = Number.isFinite(data.amount1) ? data.amount1 : null;
   lastPositionUsd = isUsdSymbol(lastSymbol1) ? data.netValueIn1 ?? null : null;
   updateTickRangeHint();
   netValueEl.textContent = `${formatNumber(data.netValueIn1, 4)} ${data.symbol1}`;
@@ -698,6 +715,8 @@ async function loadStatus() {
     outOfRangeStartMs = null;
     setRebalanceLabels('-', formatRebalanceTotal(rebalanceDelaySecValue ?? 0));
   }
+
+  updateStopLossPreview();
 
   const gasIn1 = activeGasIn1 ?? 0;
   const swapFeeIn1 = activeSwapFeeIn1 ?? 0;
