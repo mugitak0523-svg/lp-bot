@@ -332,22 +332,10 @@ h1 {
   position: relative;
 }
 
-.fees-value {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  line-height: 1;
-}
-
 .fees-amount {
   display: inline-block;
   transform-origin: left center;
   transition: color 0.2s ease;
-}
-
-.fees-yield {
-  font-size: 0.95rem;
-  color: var(--muted);
 }
 
 .fees-delta {

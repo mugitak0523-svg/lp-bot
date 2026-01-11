@@ -73,7 +73,6 @@ const walletToken1Fallback = document.getElementById('wallet-token1-fallback');
 const walletNativeFallback = document.getElementById('wallet-native-fallback');
 const tickRangeHintEl = document.getElementById('tick-range-price');
 const stopLossPreviewEl = document.getElementById('stop-loss-preview');
-
 const TOKEN_LOGOS = {
   eth: { id: 'token-eth', viewBox: '0 0 512 512' },
   weth: { id: 'token-weth', viewBox: '0 0 70 70' },
@@ -105,6 +104,7 @@ function setTokenLogo(logoEl, fallbackEl, symbol) {
   fallbackEl.textContent = symbol ? symbol.slice(0, 2) : '-';
 }
 const configForm = document.getElementById('config-form');
+const configInputs = configForm ? Array.from(configForm.querySelectorAll('input')) : [];
 const rebalanceBtn = document.getElementById('btn-rebalance');
 const closeBtn = document.getElementById('btn-close');
 const createBtn = document.getElementById('btn-create');
@@ -189,8 +189,17 @@ function updateStopLossPreview() {
   const diff = baseSize - stopValue;
   const symbol = activeSymbol1 ?? lastSymbol1 ?? '';
   let stopPriceText = '-';
-  if (Number.isFinite(lastAmount0) && Number.isFinite(lastAmount1) && lastAmount0 > 0) {
-    const priceStop = (stopValue - lastAmount1) / lastAmount0;
+  let amount0ForCalc = lastAmount0;
+  let amount1ForCalc = lastAmount1;
+  if (!Number.isFinite(amount0ForCalc) || !Number.isFinite(amount1ForCalc)) {
+    if (Number.isFinite(lastPrice0In1) && lastPrice0In1 > 0 && Number.isFinite(baseSize)) {
+      const half = baseSize / 2;
+      amount1ForCalc = half;
+      amount0ForCalc = half / lastPrice0In1;
+    }
+  }
+  if (Number.isFinite(amount0ForCalc) && Number.isFinite(amount1ForCalc) && amount0ForCalc > 0) {
+    const priceStop = (stopValue - amount1ForCalc) / amount0ForCalc;
     if (Number.isFinite(priceStop) && priceStop > 0) {
       const token0 = lastSymbol0 ?? '';
       let priceDiffText = '';
@@ -232,6 +241,13 @@ function setProfitHeader() {
   if (!profitTotalEl) return;
   const base = lastProfitLabel ?? '-';
   profitTotalEl.textContent = base;
+}
+
+function setConfigFormDisabled(disabled) {
+  if (!configForm) return;
+  configInputs.forEach((input) => {
+    input.disabled = disabled;
+  });
 }
 
 if (!chartProfitEl && chartCanvas) {
@@ -1391,6 +1407,7 @@ async function loadActivePosition() {
     outOfRangeStartMs = null;
     lastOutOfRange = false;
     createBtn.disabled = false;
+    setConfigFormDisabled(false);
     createHint.textContent = '';
     return;
   }
@@ -1489,6 +1506,7 @@ async function loadActivePosition() {
   }
   const isActive = data.status === 'active';
   createBtn.disabled = isActive;
+  setConfigFormDisabled(isActive);
   createHint.textContent = isActive ? 'Activeポジションがあるため作成できません' : '';
 }
 
