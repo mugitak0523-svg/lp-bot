@@ -334,8 +334,9 @@ h1 {
 
 .fees-value {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
+  line-height: 1.2;
 }
 
 .fees-amount {
@@ -371,7 +372,7 @@ h1 {
 }
 
 .fees-pop {
-  animation: feesPop 1s ease;
+  animation: feesPop 1.4s ease;
   color: #84cc16;
 }
 
