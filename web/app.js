@@ -12,7 +12,9 @@ const activeStatusEl = document.getElementById('active-status');
 const activeDetailsEl = document.getElementById('active-details');
 const netValueEl = document.getElementById('net-value');
 const netPnlEl = document.getElementById('net-pnl');
-const feesEl = document.getElementById('fees');
+const feesAmountEl = document.getElementById('fees-amount');
+const feesYieldEl = document.getElementById('fees-yield');
+const feesDeltaEl = document.getElementById('fees-delta');
 const profitTotalEl = document.getElementById('profit-total');
 const profitSubEl = document.getElementById('profit-sub');
 const profitDetailEl = document.getElementById('profit-detail');
@@ -137,6 +139,7 @@ let lastSymbol0 = null;
 let lastSymbol1 = null;
 let lastAmount0 = null;
 let lastAmount1 = null;
+let lastTickRangeValue = null;
 let lastActiveTokenId = null;
 let lastPositionUsd = null;
 let lastRebalanceRemainingLabel = null;
@@ -145,6 +148,8 @@ let stopAfterAutoCloseValue = false;
 let poolPriceCache = null;
 let lastPoolPriceFetchMs = 0;
 let lastLogId = null;
+let lastFeeTotalIn1 = null;
+let feeDeltaTimeout = null;
 
 function updateTickRangeHint() {
   if (!tickRangeHintEl || !configForm) return;
@@ -154,6 +159,7 @@ function updateTickRangeHint() {
     tickRangeHintEl.textContent = '-';
     return;
   }
+  lastTickRangeValue = tickRangeValue;
   if (!Number.isFinite(lastPrice0In1) || !lastSymbol1) {
     tickRangeHintEl.textContent = '-';
     return;
@@ -626,7 +632,12 @@ async function loadStatus() {
     netValueEl.textContent = '-';
     netPnlEl.textContent = '';
     netPnlEl.classList.add('hidden');
-    feesEl.textContent = '-';
+    if (feesAmountEl) feesAmountEl.textContent = '-';
+    if (feesYieldEl) feesYieldEl.textContent = '-';
+    if (feesDeltaEl) {
+      feesDeltaEl.textContent = '-';
+      feesDeltaEl.classList.add('hidden');
+    }
     lastPrice0In1 = null;
     lastSymbol0 = null;
     lastSymbol1 = null;
@@ -678,7 +689,30 @@ async function loadStatus() {
   const pnlText = `${data.pnl >= 0 ? '+' : ''}${formatNumber(data.pnl, 2)} (${formatNumber(data.pnlPct, 1)}%)`;
   netPnlEl.textContent = pnlText;
   netPnlEl.classList.remove('hidden');
-  feesEl.textContent = `${formatNumber(data.feeTotalIn1, 4)} ${data.symbol1} (+${formatNumber(data.feeYieldPct, 2)}%)`;
+  const feeTotalValue = Number.isFinite(data.feeTotalIn1) ? data.feeTotalIn1 : null;
+  if (feesAmountEl) {
+    feesAmountEl.textContent = feeTotalValue != null ? `${formatNumber(feeTotalValue, 4)} ${data.symbol1}` : '-';
+  }
+  if (feesYieldEl) {
+    feesYieldEl.textContent =
+      feeTotalValue != null ? `(+${formatNumber(data.feeYieldPct, 2)}%)` : '-';
+  }
+  if (feeTotalValue != null && Number.isFinite(lastFeeTotalIn1)) {
+    const delta = feeTotalValue - lastFeeTotalIn1;
+    if (delta > 0.000001 && feesAmountEl && feesDeltaEl) {
+      feesAmountEl.classList.remove('fees-pop');
+      // Restart animation.
+      void feesAmountEl.offsetWidth;
+      feesAmountEl.classList.add('fees-pop');
+      feesDeltaEl.textContent = `+${formatNumber(delta, 2)}`;
+      feesDeltaEl.classList.remove('hidden');
+      if (feeDeltaTimeout) clearTimeout(feeDeltaTimeout);
+      feeDeltaTimeout = setTimeout(() => {
+        feesDeltaEl.classList.add('hidden');
+      }, 3000);
+    }
+  }
+  lastFeeTotalIn1 = feeTotalValue;
   const ratio0 = Math.max(0, Math.min(100, data.ratio0 ?? 0));
   const ratio1 = Math.max(0, Math.min(100, 100 - ratio0));
   ratioFill0.style.width = `${ratio0}%`;
@@ -1046,6 +1080,32 @@ async function loadWallet() {
 let poolPriceChart = null;
 let feeLogChart = null;
 
+const rangeTickLabelPlugin = {
+  id: 'rangeTickLabel',
+  afterDatasetsDraw(chart) {
+    const { ctx, chartArea, scales } = chart;
+    const customLines = chart.options?.scales?.y?.customLines;
+    if (!customLines || !scales?.y) return;
+    const { low, high, tickRange } = customLines;
+    if (!Number.isFinite(low) || !Number.isFinite(high) || !Number.isFinite(tickRange)) return;
+    ctx.save();
+    const color = lastOutOfRange ? '#ef4444' : '#84cc16';
+    ctx.fillStyle = color;
+    ctx.font = '12px "Space Grotesk", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    const yLow = scales.y.getPixelForValue(low);
+    const yHigh = scales.y.getPixelForValue(high);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.fillRect(chartArea.right - 52, yLow - 9, 46, 18);
+    ctx.fillRect(chartArea.right - 52, yHigh - 9, 46, 18);
+    ctx.fillStyle = color;
+    ctx.fillText(`-${tickRange}`, chartArea.right - 8, yLow);
+    ctx.fillText(`+${tickRange}`, chartArea.right - 8, yHigh);
+    ctx.restore();
+  },
+};
+
 function renderPriceChart(points, meta) {
   if (!chartCanvas || !chartMetaEl || typeof window.Chart === 'undefined') return;
   if (!Array.isArray(points) || points.length < 1) {
@@ -1120,10 +1180,48 @@ function renderPriceChart(points, meta) {
         plugins: { legend: { display: false } },
         scales: {
           x: { ticks: { maxTicksLimit: 6 } },
-          y: { ticks: { maxTicksLimit: 5 } },
+          y: {
+            ticks: {
+              maxTicksLimit: 5,
+              autoSkip: false,
+              color: (context) => {
+                const customLines = context.chart?.options?.scales?.y?.customLines;
+                if (!customLines || !Number.isFinite(context.tick?.value)) return '#94a3b8';
+                const value = context.tick.value;
+                const isCustom =
+                  (Number.isFinite(customLines.low) && Math.abs(value - customLines.low) < 0.001) ||
+                  (Number.isFinite(customLines.high) && Math.abs(value - customLines.high) < 0.001) ||
+                  (Number.isFinite(customLines.entry) && Math.abs(value - customLines.entry) < 0.001);
+                if (!isCustom) return '#94a3b8';
+                return lastOutOfRange ? '#ef4444' : '#84cc16';
+              },
+              callback: (value) => formatNumber(value, 2),
+            },
+            afterBuildTicks: (axis) => {
+              const customLines = axis.chart?.options?.scales?.y?.customLines;
+              if (!customLines) return;
+              const values = [customLines.low, customLines.high, customLines.entry].filter(
+                (val) => Number.isFinite(val)
+              );
+              const existing = new Set(axis.ticks.map((tick) => tick.value));
+              values.forEach((val) => {
+                if (!existing.has(val)) {
+                  axis.ticks.push({ value: val });
+                }
+              });
+              axis.ticks.sort((a, b) => a.value - b.value);
+            },
+          },
         },
       },
+      plugins: [rangeTickLabelPlugin],
     });
+    poolPriceChart.options.scales.y.customLines = {
+      low: rangeLow,
+      high: rangeHigh,
+      entry: entryPrice,
+      tickRange: lastTickRangeValue,
+    };
   } else {
     poolPriceChart.data.labels = labels;
     poolPriceChart.data.datasets[0].data = values;
@@ -1134,6 +1232,12 @@ function renderPriceChart(points, meta) {
     poolPriceChart.data.datasets[2].borderColor = inRangeLine;
     poolPriceChart.data.datasets[2].backgroundColor = inRangeFill;
     poolPriceChart.data.datasets[3].data = entryData;
+    poolPriceChart.options.scales.y.customLines = {
+      low: rangeLow,
+      high: rangeHigh,
+      entry: entryPrice,
+      tickRange: lastTickRangeValue,
+    };
     poolPriceChart.update();
   }
 
@@ -1320,6 +1424,9 @@ async function loadActivePosition() {
   applyConfigToForm(positionConfig);
   if (typeof data.configStopLossPercent === 'number') {
     stopLossPercentValue = data.configStopLossPercent;
+  }
+  if (typeof data.configTickRange === 'number') {
+    lastTickRangeValue = data.configTickRange;
   }
   if (typeof data.configRebalanceDelaySec === 'number') {
     rebalanceDelaySecValue = data.configRebalanceDelaySec;
