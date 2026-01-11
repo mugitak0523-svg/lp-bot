@@ -334,9 +334,9 @@ h1 {
 
 .fees-value {
   display: inline-flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  line-height: 1.2;
+  line-height: 1;
 }
 
 .fees-amount {
