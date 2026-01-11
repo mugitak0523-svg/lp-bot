@@ -367,7 +367,7 @@ h1 {
 }
 
 .fees-pop {
-  animation: feesPop 0.6s ease;
+  animation: feesPop 1s ease;
   color: #84cc16;
 }
 
