@@ -351,15 +351,24 @@ h1 {
   right: 16px;
   font-size: 0.9rem;
   font-weight: 600;
-  color: #f97316;
-  background: rgba(249, 115, 22, 0.12);
+  color: #84cc16;
+  background: rgba(132, 204, 22, 0.12);
   padding: 2px 8px;
   border-radius: 999px;
+  display: none;
+}
+
+.fees-delta.hidden {
+  display: none;
+}
+
+.fees-delta:not(.hidden) {
+  display: inline-flex;
 }
 
 .fees-pop {
   animation: feesPop 0.6s ease;
-  color: #f97316;
+  color: #84cc16;
 }
 
 @keyframes feesPop {
