@@ -150,6 +150,7 @@ let lastPoolPriceFetchMs = 0;
 let lastLogId = null;
 let lastFeeTotalIn1 = null;
 let feeDeltaTimeout = null;
+let feePopTimeout = null;
 
 function updateTickRangeHint() {
   if (!tickRangeHintEl || !configForm) return;
@@ -704,6 +705,10 @@ async function loadStatus() {
       // Restart animation.
       void feesAmountEl.offsetWidth;
       feesAmountEl.classList.add('fees-pop');
+      if (feePopTimeout) clearTimeout(feePopTimeout);
+      feePopTimeout = setTimeout(() => {
+        feesAmountEl.classList.remove('fees-pop');
+      }, 700);
       feesDeltaEl.textContent = `+${formatNumber(delta, 2)}`;
       feesDeltaEl.classList.remove('hidden');
       if (feeDeltaTimeout) clearTimeout(feeDeltaTimeout);
