@@ -697,12 +697,8 @@ async function loadStatus() {
     deltaValue = Math.max(0, feeTotalValue - lastFeeTotalIn1);
   }
   if (feesAmountEl) {
-    const deltaText =
-      deltaValue != null && deltaValue >= MIN_FEE_DELTA_DISPLAY
-        ? `+${formatNumber(deltaValue, 4)} `
-        : '';
     feesAmountEl.textContent =
-      feeTotalValue != null ? `${deltaText}${formatNumber(feeTotalValue, 4)} ${data.symbol1}` : '-';
+      feeTotalValue != null ? `${formatNumber(feeTotalValue, 4)} ${data.symbol1}` : '-';
   }
   if (feesYieldEl) {
     feesYieldEl.textContent =

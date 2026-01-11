@@ -17,6 +17,7 @@ type MonitorState = {
   initialNetValue: number | null;
   lastUpdateTime: number;
   isUpdating: boolean;
+  lastFeeTotalIn1: number | null;
 };
 
 function formatSigned(value: number, decimals = 2): string {
@@ -79,6 +80,7 @@ export async function startMonitor(
     initialNetValue: typeof options.initialNetValue === 'number' ? options.initialNetValue : null,
     lastUpdateTime: 0,
     isUpdating: false,
+    lastFeeTotalIn1: null,
   };
 
   const reportState = async (trigger: string): Promise<void> => {
@@ -143,7 +145,13 @@ export async function startMonitor(
         feeTotalIn1 = fee0 * price0In1 + fee1;
         feeYield = netValueIn1 > 0 ? (feeTotalIn1 / netValueIn1) * 100 : 0;
 
-        feesText = `+${fee0.toFixed(6)} ${sym0} / +${fee1.toFixed(6)} ${sym1} (Total: ${feeTotalIn1.toFixed(4)} ${sym1}, Yield: ${formatPercent(feeYield)})`;
+        let deltaText = '';
+        if (state.lastFeeTotalIn1 != null) {
+          const delta = Math.max(0, feeTotalIn1 - state.lastFeeTotalIn1);
+          deltaText = `Delta: ${delta.toFixed(4)} ${sym1}, `;
+        }
+        feesText = `+${fee0.toFixed(6)} ${sym0} / +${fee1.toFixed(6)} ${sym1} (${deltaText}Total: ${feeTotalIn1.toFixed(4)} ${sym1}, Yield: ${formatPercent(feeYield)})`;
+        state.lastFeeTotalIn1 = feeTotalIn1;
       } catch (error) {
         feesText = '(calc failed)';
       }
