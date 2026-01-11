@@ -151,6 +151,7 @@ let lastLogId = null;
 let lastFeeTotalIn1 = null;
 let feeDeltaTimeout = null;
 let feePopTimeout = null;
+const MIN_FEE_DELTA_DISPLAY = 0.00005;
 
 function updateTickRangeHint() {
   if (!tickRangeHintEl || !configForm) return;
@@ -691,10 +692,14 @@ async function loadStatus() {
   netPnlEl.textContent = pnlText;
   netPnlEl.classList.remove('hidden');
   const feeTotalValue = Number.isFinite(data.feeTotalIn1) ? data.feeTotalIn1 : null;
+  let deltaValue = null;
+  if (feeTotalValue != null && Number.isFinite(lastFeeTotalIn1)) {
+    deltaValue = Math.max(0, feeTotalValue - lastFeeTotalIn1);
+  }
   if (feesAmountEl) {
     const deltaText =
-      feeTotalValue != null && Number.isFinite(lastFeeTotalIn1)
-        ? `+${formatNumber(Math.max(0, feeTotalValue - lastFeeTotalIn1), 4)} `
+      deltaValue != null && deltaValue >= MIN_FEE_DELTA_DISPLAY
+        ? `+${formatNumber(deltaValue, 4)} `
         : '';
     feesAmountEl.textContent =
       feeTotalValue != null ? `${deltaText}${formatNumber(feeTotalValue, 4)} ${data.symbol1}` : '-';
@@ -705,7 +710,7 @@ async function loadStatus() {
   }
   if (feeTotalValue != null && Number.isFinite(lastFeeTotalIn1)) {
     const delta = feeTotalValue - lastFeeTotalIn1;
-    if (delta > 0.000001 && feesAmountEl && feesDeltaEl) {
+    if (delta >= MIN_FEE_DELTA_DISPLAY && feesAmountEl && feesDeltaEl) {
       feesAmountEl.classList.remove('fees-pop');
       // Restart animation.
       void feesAmountEl.offsetWidth;
