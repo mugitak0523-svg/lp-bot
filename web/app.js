@@ -572,7 +572,13 @@ function updateHistoryCharts(closed) {
     const winRate = todayClosed.length > 0 ? (wins / todayClosed.length) * 100 : null;
     const winRateText = winRate == null ? '-' : `${formatNumber(winRate, 1)}%`;
     const aprText = aprValue == null ? '-' : `${formatNumber(aprValue, 1)}%`;
-    historyTodayTotalEl.textContent = `Total ${formatSigned(todayTotal, 4)} (Win : ${winRateText} / APR : ${aprText})`;
+    const todaySize = todayClosed
+      .map((row) => Number(row.netValueIn1))
+      .filter((value) => Number.isFinite(value) && value > 0)
+      .reduce((acc, value) => acc + value, 0);
+    const dyValue = todaySize > 0 ? (todayTotal / todaySize) * 100 : null;
+    const dyText = dyValue == null ? '-' : `${formatNumber(dyValue, 2)}%`;
+    historyTodayTotalEl.textContent = `Total ${formatSigned(todayTotal, 4)} (Win : ${winRateText} / APR : ${aprText} / DY : ${dyText})`;
   }
   const hourLabels = Array.from({ length: 24 }, (_, idx) => `${idx}h`);
 
