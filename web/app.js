@@ -44,6 +44,7 @@ const historyProfitChartEl = document.getElementById('history-profit-chart');
 const historyTodayChartEl = document.getElementById('history-today-chart');
 const historyTotalProfitEl = document.getElementById('history-total-profit');
 const historyTodayTotalEl = document.getElementById('history-today-total');
+const historyDateEl = document.getElementById('history-date');
 const chartCanvas = document.getElementById('price-chart');
 const feeChartCanvas = document.getElementById('fee-chart');
 const feeChartMetaEl = document.getElementById('fee-chart-meta');
@@ -156,6 +157,7 @@ const MIN_FEE_DELTA_DISPLAY = 0.00005;
 let lastFeeIncreaseAtMs = null;
 let lastFeeIncreaseDelta = null;
 let activeRebalanceDelaySec = null;
+let lastClosedRows = [];
 
 function updateTickRangeHint() {
   if (!tickRangeHintEl || !configForm) return;
@@ -484,6 +486,16 @@ function computeHistoryApr(closed) {
   return Number.isFinite(annualized) ? annualized : null;
 }
 
+function getHistoryDateKey() {
+  if (historyDateEl && historyDateEl.value) {
+    const date = new Date(`${historyDateEl.value}T00:00:00`);
+    if (Number.isFinite(date.getTime())) {
+      return date.toDateString();
+    }
+  }
+  return new Date().toDateString();
+}
+
 async function refreshWinRateIfNeeded() {
   if (winRateFetching) return;
   if (Date.now() - winRateLastFetch < 60000) return;
@@ -518,15 +530,13 @@ function buildProfitTrend(closed) {
   });
 }
 
-function buildTodayProfit(closed) {
-  const now = new Date();
-  const todayKey = now.toDateString();
+function buildTodayProfit(closed, dateKey) {
   const buckets = Array.from({ length: 24 }, () => 0);
 
   closed.forEach((row) => {
     if (!row.closedAt) return;
     const time = new Date(row.closedAt);
-    if (time.toDateString() !== todayKey) return;
+    if (time.toDateString() !== dateKey) return;
     const profit = computeProfitValue(row);
     if (profit == null) return;
     buckets[time.getHours()] += profit;
@@ -555,14 +565,14 @@ function updateHistoryCharts(closed) {
   const trendLabels = trend.map((point) => new Date(point.time).toLocaleDateString());
   const trendValues = trend.map((point) => Number(point.value.toFixed(4)));
 
-  const todayBuckets = buildTodayProfit(closed);
+  const selectedDateKey = getHistoryDateKey();
+  const todayBuckets = buildTodayProfit(closed, selectedDateKey);
   const todayValues = todayBuckets.map((value) => Number(value.toFixed(4)));
   if (historyTodayTotalEl) {
     const todayTotal = todayBuckets.reduce((acc, value) => acc + value, 0);
-    const todayKey = new Date().toDateString();
     const todayClosed = closed.filter((row) => {
       if (!row.closedAt) return false;
-      return new Date(row.closedAt).toDateString() === todayKey;
+      return new Date(row.closedAt).toDateString() === selectedDateKey;
     });
     const aprValue = computeHistoryApr(todayClosed);
     const wins = todayClosed.filter((row) => {
@@ -914,6 +924,7 @@ async function loadConfig() {
 async function loadHistory() {
   const rows = await fetchJson('/positions?limit=100');
   const closed = rows.filter((row) => row.status === 'closed');
+  lastClosedRows = closed;
   setWinRateFromClosed(closed);
   if (closed.length === 0) {
     historyBodyEl.innerHTML = '';
@@ -1576,6 +1587,14 @@ if (configForm) {
   }
 }
 
+if (historyDateEl) {
+  historyDateEl.addEventListener('change', () => {
+    if (lastClosedRows.length > 0) {
+      updateHistoryCharts(lastClosedRows);
+    }
+  });
+}
+
 configForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (createBtn.disabled) return;
@@ -1622,6 +1641,10 @@ async function boot() {
     await Promise.all([loadConfig(), loadStatus(), loadActivePosition()]);
   } catch (error) {
     console.error(error);
+  }
+  if (historyDateEl && !historyDateEl.value) {
+    const today = new Date();
+    historyDateEl.value = today.toISOString().slice(0, 10);
   }
   // Pool price chart now uses log buffer updates.
   loadLogs().catch((error) => console.error(error));
