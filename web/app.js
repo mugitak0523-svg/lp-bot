@@ -658,6 +658,14 @@ function updateHistoryCharts(closed) {
             pointRadius: 0,
             tension: 0.25,
             yAxisID: 'y1',
+            segment: {
+              borderColor: (ctx) => {
+                const y0 = ctx.p0?.parsed?.y;
+                const y1 = ctx.p1?.parsed?.y;
+                if (typeof y0 !== 'number' || typeof y1 !== 'number') return '#f36a2b';
+                return y0 <= 0 && y1 <= 0 ? '#94a3b8' : '#f36a2b';
+              },
+            },
           },
         ],
       },
