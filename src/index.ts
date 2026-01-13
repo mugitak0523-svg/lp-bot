@@ -46,6 +46,26 @@ function formatSigned(value: number | null | undefined, digits = 4): string {
   return `${sign}${value.toFixed(digits)}`;
 }
 
+function formatGasNative(value: number): string {
+  if (!Number.isFinite(value)) return '0';
+  const fixed = value.toFixed(18);
+  return fixed.replace(/\.?0+$/, '');
+}
+
+function mergeGasCost(
+  active: Awaited<ReturnType<typeof getLatestActivePosition>> | null,
+  deltaNative: string,
+  deltaIn1: number
+): { gasCostNative: string; gasCostIn1: number } {
+  const baseNative = active?.gasCostNative ? parseFloat(active.gasCostNative) : 0;
+  const baseIn1 = active?.gasCostIn1 ?? 0;
+  const addNative = Number.isFinite(parseFloat(deltaNative)) ? parseFloat(deltaNative) : 0;
+  const addIn1 = Number.isFinite(deltaIn1) ? deltaIn1 : 0;
+  const totalNative = baseNative + addNative;
+  const totalIn1 = baseIn1 + addIn1;
+  return { gasCostNative: formatGasNative(totalNative), gasCostIn1: totalIn1 };
+}
+
 function buildCloseSummary(params: {
   title: string;
   tokenId: string;
@@ -235,12 +255,15 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       const tokenId = active?.tokenId ?? settings.tokenId;
       const result = await closePosition({ removePercent: 100, tokenId });
       if (active?.tokenId) {
+        const mergedGas = mergeGasCost(active, result.gasCostNative, result.gasCostIn1);
         const details: CloseDetails = {
           closeTxHash: result.closeTxHash,
           closeReason: 'stop_loss',
           closedNetValueIn1: result.closedNetValueIn1,
           realizedFeesIn1: result.closedFeesIn1,
           realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          gasCostNative: mergedGas.gasCostNative,
+          gasCostIn1: mergedGas.gasCostIn1,
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
@@ -255,7 +278,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
             closedNetValueIn1: details.closedNetValueIn1,
             realizedFeesIn1: details.realizedFeesIn1,
             realizedPnlIn1: details.realizedPnlIn1,
-            gasCostIn1: active.gasCostIn1,
+            gasCostIn1: details.gasCostIn1,
             swapFeeIn1: active.swapFeeIn1,
             closeReason: details.closeReason,
             closeTxHash: details.closeTxHash,
@@ -289,12 +312,15 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           'warn'
         );
         const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
+        const mergedGas = mergeGasCost(active, result.gasCostNative, result.gasCostIn1);
         const details: CloseDetails = {
           closeTxHash: result.closeTxHash,
           closeReason: 'auto_close_no_rebalance',
           closedNetValueIn1: result.closedNetValueIn1,
           realizedFeesIn1: result.closedFeesIn1,
           realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+          gasCostNative: mergedGas.gasCostNative,
+          gasCostIn1: mergedGas.gasCostIn1,
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
@@ -310,7 +336,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
             closedNetValueIn1: details.closedNetValueIn1,
             realizedFeesIn1: details.realizedFeesIn1,
             realizedPnlIn1: details.realizedPnlIn1,
-            gasCostIn1: active.gasCostIn1,
+            gasCostIn1: details.gasCostIn1,
             swapFeeIn1: active.swapFeeIn1,
             closeReason: details.closeReason,
             closeTxHash: details.closeTxHash,
@@ -494,12 +520,15 @@ const apiActions = {
         'warn'
       );
       const result = await closePosition({ removePercent: 100, tokenId: active.tokenId });
+      const mergedGas = mergeGasCost(active, result.gasCostNative, result.gasCostIn1);
       const details: CloseDetails = {
         closeTxHash: result.closeTxHash,
         closeReason: 'manual_close',
         closedNetValueIn1: result.closedNetValueIn1,
         realizedFeesIn1: result.closedFeesIn1,
         realizedPnlIn1: result.closedNetValueIn1 - active.netValueIn1,
+        gasCostNative: mergedGas.gasCostNative,
+        gasCostIn1: mergedGas.gasCostIn1,
         closedAt: new Date().toISOString(),
       };
       await closePositionWithDetails(db, active.tokenId, details);
@@ -515,7 +544,7 @@ const apiActions = {
           closedNetValueIn1: details.closedNetValueIn1,
           realizedFeesIn1: details.realizedFeesIn1,
           realizedPnlIn1: details.realizedPnlIn1,
-          gasCostIn1: active.gasCostIn1,
+          gasCostIn1: details.gasCostIn1,
           swapFeeIn1: active.swapFeeIn1,
           closeReason: details.closeReason,
           closeTxHash: details.closeTxHash,
