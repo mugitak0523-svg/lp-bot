@@ -100,6 +100,8 @@ export type CloseResult = {
   price0In1: number;
   closedNetValueIn1: number;
   closedFeesIn1: number;
+  gasCostNative: string;
+  gasCostIn1: number;
 };
 
 export type RebalanceResult = {
@@ -177,6 +179,12 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
   const closedFeesIn1 =
     parseFloat(ethers.utils.formatUnits(fees0, poolContext.token0.decimals)) * price0In1 +
     parseFloat(ethers.utils.formatUnits(fees1, poolContext.token1.decimals));
+  const gasCosts: BigNumber[] = [];
+  if (decreaseReceipt) gasCosts.push(decreaseReceipt.gasUsed.mul(decreaseReceipt.effectiveGasPrice));
+  gasCosts.push(collectReceipt.gasUsed.mul(collectReceipt.effectiveGasPrice));
+  const totalGas = gasCosts.reduce((acc, value) => acc.add(value), BigNumber.from(0));
+  const gasCostNative = ethers.utils.formatEther(totalGas);
+  const gasCostIn1 = parseFloat(gasCostNative) * price0In1;
   console.log('=== Close Done ===');
 
   return {
@@ -188,6 +196,8 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
     price0In1,
     closedNetValueIn1,
     closedFeesIn1,
+    gasCostNative,
+    gasCostIn1,
   };
 }
 

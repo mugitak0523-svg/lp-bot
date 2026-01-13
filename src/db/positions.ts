@@ -131,6 +131,8 @@ export type CloseDetails = {
   closedNetValueIn1: number | null;
   realizedFeesIn1: number | null;
   realizedPnlIn1: number | null;
+  gasCostNative?: string | null;
+  gasCostIn1?: number | null;
   closedAt: string;
 };
 
@@ -149,6 +151,8 @@ export async function closePositionWithDetails(
          closed_net_value_in_1 = ?,
          realized_fees_in_1 = ?,
          realized_pnl_in_1 = ?,
+         gas_cost_native = COALESCE(?, gas_cost_native),
+         gas_cost_in_1 = COALESCE(?, gas_cost_in_1),
          closed_at = ?,
          updated_at = ?
      WHERE id = (
@@ -163,6 +167,8 @@ export async function closePositionWithDetails(
       details.closedNetValueIn1,
       details.realizedFeesIn1,
       details.realizedPnlIn1,
+      details.gasCostNative ?? null,
+      details.gasCostIn1 ?? null,
       details.closedAt,
       now,
       tokenId,
