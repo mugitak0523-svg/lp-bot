@@ -575,6 +575,12 @@ function updateHistoryCharts(closed) {
   const selectedDateKey = getHistoryDateKey();
   const todayBuckets = buildTodayProfit(closed, selectedDateKey);
   const todayValues = todayBuckets.map((value) => Number(value.toFixed(4)));
+  const todayTrend = [];
+  let runningToday = 0;
+  todayValues.forEach((value) => {
+    runningToday += value;
+    todayTrend.push(Number(runningToday.toFixed(4)));
+  });
   if (historyTodayTotalEl) {
     const todayTotal = todayBuckets.reduce((acc, value) => acc + value, 0);
     const todayClosed = closed.filter((row) => {
@@ -639,7 +645,19 @@ function updateHistoryCharts(closed) {
           {
             label: 'Today Profit',
             data: todayValues,
-            backgroundColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.55)',
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
+            label: 'Today Cumulative',
+            data: todayTrend,
+            borderColor: '#f36a2b',
+            backgroundColor: 'rgba(243, 106, 43, 0.15)',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.25,
+            yAxisID: 'y1',
           },
         ],
       },
@@ -649,12 +667,18 @@ function updateHistoryCharts(closed) {
         scales: {
           x: { ticks: { maxTicksLimit: 8 } },
           y: { ticks: { maxTicksLimit: 5 } },
+          y1: {
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: { maxTicksLimit: 5 },
+          },
         },
       },
     });
   } else {
     historyTodayChart.data.labels = hourLabels;
     historyTodayChart.data.datasets[0].data = todayValues;
+    historyTodayChart.data.datasets[1].data = todayTrend;
     historyTodayChart.update();
   }
 }
