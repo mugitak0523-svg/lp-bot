@@ -310,7 +310,10 @@
             <div class="card history-chart">
               <div class="chart-header">
                 <h2 class="card-title">Today Profit</h2>
-                <span class="stat-sub" id="history-today-total">-</span>
+                <div class="chart-controls">
+                  <input type="date" id="history-date" />
+                  <span class="stat-sub" id="history-today-total">-</span>
+                </div>
               </div>
               <canvas id="history-today-chart" height="160"></canvas>
             </div>

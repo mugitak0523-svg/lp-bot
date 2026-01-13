@@ -591,6 +591,21 @@ h1 {
   margin-bottom: 12px;
 }
 
+.chart-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chart-controls input[type="date"] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  color: var(--ink);
+  background: #fff;
+}
+
 .chart-wrap {
   min-height: 220px;
   border: none;
