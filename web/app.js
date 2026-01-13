@@ -45,6 +45,8 @@ const historyTodayChartEl = document.getElementById('history-today-chart');
 const historyTotalProfitEl = document.getElementById('history-total-profit');
 const historyTodayTotalEl = document.getElementById('history-today-total');
 const historyDateEl = document.getElementById('history-date');
+const historyDatePrevEl = document.getElementById('history-date-prev');
+const historyDateNextEl = document.getElementById('history-date-next');
 const chartCanvas = document.getElementById('price-chart');
 const feeChartCanvas = document.getElementById('fee-chart');
 const feeChartMetaEl = document.getElementById('fee-chart-meta');
@@ -488,12 +490,17 @@ function computeHistoryApr(closed) {
 
 function getHistoryDateKey() {
   if (historyDateEl && historyDateEl.value) {
-    const date = new Date(`${historyDateEl.value}T00:00:00`);
+    const date = historyDateEl.valueAsDate ?? new Date(`${historyDateEl.value}T00:00:00`);
     if (Number.isFinite(date.getTime())) {
       return date.toDateString();
     }
   }
   return new Date().toDateString();
+}
+
+function formatDateInputValue(date) {
+  const local = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return local.toLocaleDateString('en-CA');
 }
 
 async function refreshWinRateIfNeeded() {
@@ -1595,6 +1602,24 @@ if (historyDateEl) {
   });
 }
 
+function shiftHistoryDate(days) {
+  if (!historyDateEl) return;
+  const base = historyDateEl.valueAsDate ?? new Date();
+  if (!Number.isFinite(base.getTime())) return;
+  base.setDate(base.getDate() + days);
+  historyDateEl.value = formatDateInputValue(base);
+  if (lastClosedRows.length > 0) {
+    updateHistoryCharts(lastClosedRows);
+  }
+}
+
+if (historyDatePrevEl) {
+  historyDatePrevEl.addEventListener('click', () => shiftHistoryDate(-1));
+}
+if (historyDateNextEl) {
+  historyDateNextEl.addEventListener('click', () => shiftHistoryDate(1));
+}
+
 configForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (createBtn.disabled) return;
@@ -1644,7 +1669,7 @@ async function boot() {
   }
   if (historyDateEl && !historyDateEl.value) {
     const today = new Date();
-    historyDateEl.value = today.toISOString().slice(0, 10);
+    historyDateEl.value = formatDateInputValue(today);
   }
   // Pool price chart now uses log buffer updates.
   loadLogs().catch((error) => console.error(error));

@@ -604,6 +604,17 @@ h1 {
   font-size: 0.8rem;
   color: var(--ink);
   background: #fff;
+  line-height: 1;
+  height: 26px;
+  align-self: center;
+  transform: translateY(-2.5px);
+}
+
+.icon-btn.small {
+  width: 26px;
+  height: 26px;
+  font-size: 1rem;
+  line-height: 1;
 }
 
 .chart-wrap {
