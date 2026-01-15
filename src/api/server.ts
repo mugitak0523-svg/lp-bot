@@ -1,3 +1,4 @@
+import { spawn } from 'child_process';
 import express from 'express';
 import https from 'https';
 import path from 'path';
@@ -28,6 +29,47 @@ export type ApiActions = {
   mint?: () => Promise<void>;
 };
 
+type ExtendedCliResult =
+  | { ok: true; data: unknown; retry_attempts?: number }
+  | { ok: false; error: string; status_code?: number; retry_attempts?: number };
+
+const extendedExampleDir = path.resolve(process.cwd(), 'extended_example');
+const extendedCliPath = path.resolve(process.cwd(), 'src', 'extended', 'cli.py');
+const extendedPythonBin = process.env.EXTENDED_PYTHON_BIN ?? 'python3';
+
+function runExtendedCli(command: string, payload: Record<string, unknown>): Promise<ExtendedCliResult> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(extendedPythonBin, [extendedCliPath, command], {
+      cwd: extendedExampleDir,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', () => {
+      const output = stdout.trim();
+      if (!output) {
+        reject(new Error(stderr.trim() || 'extended cli returned empty output'));
+        return;
+      }
+      try {
+        resolve(JSON.parse(output));
+      } catch (error) {
+        const message = stderr.trim() || String(error);
+        reject(new Error(`failed to parse extended cli output: ${message}`));
+      }
+    });
+    child.stdin.write(JSON.stringify(payload ?? {}));
+    child.stdin.end();
+  });
+}
+
 export function startApiServer(port: number, actions: ApiActions = {}): void {
   const app = express();
   app.use(express.json());
@@ -41,6 +83,74 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       return;
     }
     res.json(snapshot);
+  });
+
+  app.post('/orders/market', async (req, res) => {
+    try {
+      const payload = typeof req.body === 'object' && req.body ? req.body : {};
+      const result = await runExtendedCli('market_order', payload);
+      if (!result.ok) {
+        res.status(result.status_code ?? 502).json({ error: result.error });
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.get('/orders/:id', async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      if (!/^\d+$/.test(orderId)) {
+        res.status(400).json({ error: 'invalid order id' });
+        return;
+      }
+      const result = await runExtendedCli('order_by_id', { order_id: orderId });
+      if (!result.ok) {
+        const body: Record<string, unknown> = { error: result.error };
+        if ('retry_attempts' in result && result.retry_attempts != null) {
+          body.retry_attempts = result.retry_attempts;
+        }
+        res.status(result.status_code ?? 502).json(body);
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.get('/trades', async (req, res) => {
+    try {
+      const marketQuery = req.query.market;
+      const market = Array.isArray(marketQuery)
+        ? marketQuery.map((value) => String(value))
+        : marketQuery
+          ? [String(marketQuery)]
+          : undefined;
+      const side = typeof req.query.side === 'string' ? req.query.side : undefined;
+      const tradeType = typeof req.query.trade_type === 'string' ? req.query.trade_type : undefined;
+      const cursor = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : undefined;
+      const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+      const payload: Record<string, unknown> = {};
+      if (market) payload.market = market;
+      if (side) payload.side = side;
+      if (tradeType) payload.trade_type = tradeType;
+      if (Number.isFinite(cursor)) payload.cursor = cursor;
+      if (Number.isFinite(limit)) payload.limit = limit;
+      const result = await runExtendedCli('trades', payload);
+      if (!result.ok) {
+        res.status(result.status_code ?? 502).json({ error: result.error });
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: message });
+    }
   });
 
   app.get('/pool/price', async (_req, res) => {
