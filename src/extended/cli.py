@@ -108,6 +108,16 @@ async def run() -> None:
                             "ok": True,
                             "data": {"order": order_details, "retry_attempts": attempts_used},
                         }
+        elif command == "mark_price":
+            market = payload.get("market") or "ETH-USD"
+            response = await trading_client.markets_info.get_markets(market_names=[market])
+            if not response.data:
+                result = {"ok": False, "status_code": 404, "error": f"market not found: {market}"}
+            else:
+                market_data = response.data[0]
+                stats = market_data.market_stats
+                stats_dump = stats.model_dump(mode="json") if hasattr(stats, "model_dump") else stats
+                result = {"ok": True, "data": {"market": market, "stats": stats_dump}}
         else:
             result = {"ok": False, "status_code": 400, "error": f"unknown command: {command}"}
     except HTTPException as exc:

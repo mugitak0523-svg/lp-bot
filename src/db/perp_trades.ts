@@ -101,3 +101,40 @@ export async function listPerpTrades(
     [...values, limit]
   );
 }
+
+export async function computePerpRealizedForTokenId(
+  db: SqliteDb,
+  tokenId: string
+): Promise<{ pnl: number | null; fee: number | null }> {
+  const rows = await all<PerpTradeRow>(
+    db,
+    `SELECT side, qty, price, fee FROM perp_trades WHERE token_id = ? ORDER BY created_time ASC`,
+    [tokenId]
+  );
+  if (!rows.length) {
+    return { pnl: null, fee: null };
+  }
+  let netQty = 0;
+  let sellValue = 0;
+  let buyValue = 0;
+  let feeTotal = 0;
+  rows.forEach((row) => {
+    const qty = Number(row.qty);
+    const price = Number(row.price);
+    const fee = Number(row.fee);
+    if (Number.isFinite(qty)) {
+      netQty += row.side === 'BUY' ? qty : -qty;
+      if (Number.isFinite(price)) {
+        if (row.side === 'BUY') buyValue += qty * price;
+        else sellValue += qty * price;
+      }
+    }
+    if (Number.isFinite(fee)) {
+      feeTotal += fee;
+    }
+  });
+  if (Math.abs(netQty) > 1e-8) {
+    return { pnl: null, fee: feeTotal };
+  }
+  return { pnl: sellValue - buyValue, fee: feeTotal };
+}

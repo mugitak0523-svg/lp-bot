@@ -22,6 +22,8 @@ export type PositionRecord = {
   gasCostNative?: string;
   gasCostIn1?: number;
   swapFeeIn1?: number;
+  perpRealizedPnlIn1?: number;
+  perpRealizedFeeIn1?: number;
   configTickRange?: number;
   configRebalanceDelaySec?: number;
   configSlippageBps?: number;
@@ -53,13 +55,14 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       liquidity, amount0, amount1,
       price0_in_1, net_value_in_1,
       fees0, fees1, gas_cost_native, gas_cost_in_1, swap_fee_in_1,
+      perp_realized_pnl_in_1, perp_realized_fee_in_1,
       config_tick_range, config_rebalance_delay_sec, config_slippage_bps,
       config_stop_loss_percent, config_max_gas_price_gwei, config_target_total_token1,
       config_stop_after_auto_close,
       rebalance_reason, mint_tx_hash, close_tx_hash, close_reason,
       closed_net_value_in_1, realized_fees_in_1, realized_pnl_in_1, closed_at,
       status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.tokenId,
       record.poolAddress,
@@ -82,6 +85,8 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       record.gasCostNative ?? null,
       record.gasCostIn1 ?? null,
       record.swapFeeIn1 ?? null,
+      record.perpRealizedPnlIn1 ?? null,
+      record.perpRealizedFeeIn1 ?? null,
       record.configTickRange ?? null,
       record.configRebalanceDelaySec ?? null,
       record.configSlippageBps ?? null,
@@ -176,6 +181,28 @@ export async function closePositionWithDetails(
   );
 }
 
+export async function updatePerpCloseDetails(
+  db: SqliteDb,
+  tokenId: string,
+  details: { perpRealizedPnlIn1: number | null; perpRealizedFeeIn1: number | null }
+): Promise<void> {
+  const now = new Date().toISOString();
+  await run(
+    db,
+    `UPDATE positions
+     SET perp_realized_pnl_in_1 = ?,
+         perp_realized_fee_in_1 = ?,
+         updated_at = ?
+     WHERE id = (
+       SELECT id FROM positions
+       WHERE token_id = ? AND status = 'closed'
+       ORDER BY id DESC
+       LIMIT 1
+     )`,
+    [details.perpRealizedPnlIn1, details.perpRealizedFeeIn1, now, tokenId]
+  );
+}
+
 export async function closeLatestActivePosition(db: SqliteDb, closeTxHash: string | null): Promise<void> {
   const now = new Date().toISOString();
   await run(
@@ -209,6 +236,8 @@ export async function listPositions(db: SqliteDb, limit = 50): Promise<PositionR
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
       swap_fee_in_1 AS swapFeeIn1,
+      perp_realized_pnl_in_1 AS perpRealizedPnlIn1,
+      perp_realized_fee_in_1 AS perpRealizedFeeIn1,
       config_tick_range AS configTickRange,
       config_rebalance_delay_sec AS configRebalanceDelaySec,
       config_slippage_bps AS configSlippageBps,
@@ -249,6 +278,8 @@ export async function getLatestPosition(db: SqliteDb): Promise<PositionRecord | 
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
       swap_fee_in_1 AS swapFeeIn1,
+      perp_realized_pnl_in_1 AS perpRealizedPnlIn1,
+      perp_realized_fee_in_1 AS perpRealizedFeeIn1,
       config_tick_range AS configTickRange,
       config_rebalance_delay_sec AS configRebalanceDelaySec,
       config_slippage_bps AS configSlippageBps,
@@ -288,6 +319,8 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
       price0_in_1 AS price0In1, net_value_in_1 AS netValueIn1,
       fees0, fees1, gas_cost_native AS gasCostNative, gas_cost_in_1 AS gasCostIn1,
       swap_fee_in_1 AS swapFeeIn1,
+      perp_realized_pnl_in_1 AS perpRealizedPnlIn1,
+      perp_realized_fee_in_1 AS perpRealizedFeeIn1,
       config_tick_range AS configTickRange,
       config_rebalance_delay_sec AS configRebalanceDelaySec,
       config_slippage_bps AS configSlippageBps,

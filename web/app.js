@@ -10,6 +10,15 @@ const activeGasEl = document.getElementById('active-gas');
 const activeSwapFeeEl = document.getElementById('active-swap-fee');
 const activeStatusEl = document.getElementById('active-status');
 const activeDetailsEl = document.getElementById('active-details');
+const costTotalEl = document.getElementById('cost-total');
+const costDetailEl = document.getElementById('cost-detail');
+const perpStatusEl = document.getElementById('perp-status');
+const perpSizeEl = document.getElementById('perp-size-value');
+const perpPnlEl = document.getElementById('perp-size-pnl');
+const perpUpdatedEl = document.getElementById('perp-updated');
+const costBarGasEl = document.getElementById('cost-bar-gas');
+const costBarSwapEl = document.getElementById('cost-bar-swap');
+const costBarPerpEl = document.getElementById('cost-bar-perp');
 const netValueEl = document.getElementById('net-value');
 const netPnlEl = document.getElementById('net-pnl');
 const feesAmountEl = document.getElementById('fees-amount');
@@ -21,9 +30,11 @@ const profitSubEl = document.getElementById('profit-sub');
 const profitDetailEl = document.getElementById('profit-detail');
 const profitRatioPnlPos = document.getElementById('profit-ratio-pnl-pos');
 const profitRatioFeesPos = document.getElementById('profit-ratio-fees-pos');
+const profitRatioPerpPos = document.getElementById('profit-ratio-perp-pos');
 const profitRatioPnlNeg = document.getElementById('profit-ratio-pnl-neg');
-const profitRatioGas = document.getElementById('profit-ratio-gas');
-const profitRatioSwap = document.getElementById('profit-ratio-swap');
+const profitRatioFeesNeg = document.getElementById('profit-ratio-fees-neg');
+const profitRatioPerpNeg = document.getElementById('profit-ratio-perp-neg');
+const profitRatioCost = document.getElementById('profit-ratio-cost');
 const profitRatioText = document.getElementById('profit-ratio-text');
 const profitRatioPositiveBar = document.getElementById('profit-ratio-positive');
 const profitRatioNegativeBar = document.getElementById('profit-ratio-negative');
@@ -159,6 +170,41 @@ const MIN_FEE_DELTA_DISPLAY = 0.00005;
 let lastFeeIncreaseAtMs = null;
 let lastFeeIncreaseDelta = null;
 let activeRebalanceDelaySec = null;
+let perpAskPrice = null;
+let perpAskUpdatedAt = null;
+let perpPricePnlIn1 = null;
+let perpFeeIn1 = null;
+let perpQuoteSymbol = 'USDC';
+
+function resetPerpCard() {
+  if (perpStatusEl) {
+    perpStatusEl.textContent = '-';
+    perpStatusEl.classList.remove('ok', 'warn');
+  }
+  if (perpSizeEl) perpSizeEl.textContent = '-';
+  if (perpPnlEl) perpPnlEl.textContent = '-';
+  if (perpUpdatedEl) perpUpdatedEl.textContent = 'Updated -';
+  if (costTotalEl) costTotalEl.textContent = '-';
+  if (costDetailEl) costDetailEl.textContent = '-';
+  if (costBarGasEl) costBarGasEl.style.width = '0%';
+  if (costBarSwapEl) costBarSwapEl.style.width = '0%';
+  if (costBarPerpEl) costBarPerpEl.style.width = '0%';
+  perpPricePnlIn1 = null;
+  perpFeeIn1 = null;
+}
+
+async function loadPerpAskPrice() {
+  try {
+    const data = await fetchJson('/perp/mark-price');
+    const ask = Number(data?.stats?.ask_price ?? data?.stats?.askPrice);
+    if (Number.isFinite(ask)) {
+      perpAskPrice = ask;
+      perpAskUpdatedAt = Date.now();
+    }
+  } catch (error) {
+    console.error(error);
+  }
+}
 let lastClosedRows = [];
 
 function updateTickRangeHint() {
@@ -342,6 +388,52 @@ function formatPercent(value) {
   return formatSigned(value, digits);
 }
 
+function computeNetPosition(trades) {
+  const ordered = [...trades].sort((a, b) => {
+    const ta = Number(a.created_time ?? 0);
+    const tb = Number(b.created_time ?? 0);
+    return ta - tb;
+  });
+  let position = 0;
+  let avgEntry = 0;
+  ordered.forEach((trade) => {
+    const qty = Number(trade.qty);
+    const price = Number(trade.price);
+    if (!Number.isFinite(qty) || qty <= 0 || !Number.isFinite(price)) return;
+    if (trade.side === 'BUY') {
+      if (position >= 0) {
+        const nextPos = position + qty;
+        avgEntry = nextPos > 0 ? (avgEntry * position + price * qty) / nextPos : 0;
+        position = nextPos;
+      } else {
+        const remaining = qty - Math.abs(position);
+        if (remaining > 0) {
+          position = remaining;
+          avgEntry = price;
+        } else {
+          position += qty;
+        }
+      }
+    } else {
+      if (position <= 0) {
+        const absPos = Math.abs(position);
+        const nextAbs = absPos + qty;
+        avgEntry = nextAbs > 0 ? (avgEntry * absPos + price * qty) / nextAbs : 0;
+        position = -nextAbs;
+      } else {
+        const remaining = qty - position;
+        if (remaining > 0) {
+          position = -remaining;
+          avgEntry = price;
+        } else {
+          position -= qty;
+        }
+      }
+    }
+  });
+  return { position, avgEntry };
+}
+
 function formatUsd(value) {
   if (!Number.isFinite(value)) return '-';
   return `$${formatNumber(value, 2)}`;
@@ -437,7 +529,9 @@ function computeProfitValue(row) {
     return null;
   }
   const swapFee = typeof row.swapFeeIn1 === 'number' ? row.swapFeeIn1 : 0;
-  return row.realizedPnlIn1 + row.realizedFeesIn1 - row.gasCostIn1 - swapFee;
+  const perpPnl = typeof row.perpRealizedPnlIn1 === 'number' ? row.perpRealizedPnlIn1 : 0;
+  const perpFee = typeof row.perpRealizedFeeIn1 === 'number' ? row.perpRealizedFeeIn1 : 0;
+  return row.realizedPnlIn1 + row.realizedFeesIn1 + perpPnl - row.gasCostIn1 - swapFee - perpFee;
 }
 
 function computeInterestLabel(row) {
@@ -754,9 +848,11 @@ async function loadStatus() {
     profitDetailEl.textContent = '-';
     if (profitRatioPnlPos) profitRatioPnlPos.style.width = '0%';
     if (profitRatioFeesPos) profitRatioFeesPos.style.width = '0%';
+    if (profitRatioPerpPos) profitRatioPerpPos.style.width = '0%';
     if (profitRatioPnlNeg) profitRatioPnlNeg.style.width = '0%';
-    if (profitRatioGas) profitRatioGas.style.width = '0%';
-    if (profitRatioSwap) profitRatioSwap.style.width = '0%';
+    if (profitRatioFeesNeg) profitRatioFeesNeg.style.width = '0%';
+    if (profitRatioPerpNeg) profitRatioPerpNeg.style.width = '0%';
+    if (profitRatioCost) profitRatioCost.style.width = '0%';
     if (profitRatioPositiveBar) profitRatioPositiveBar.style.width = '0%';
     if (profitRatioNegativeBar) profitRatioNegativeBar.style.width = '0%';
     if (profitRatioText) profitRatioText.textContent = '-';
@@ -871,7 +967,10 @@ async function loadStatus() {
   const gasIn1 = activeGasIn1 ?? 0;
   const swapFeeIn1 = activeSwapFeeIn1 ?? 0;
   const symbol1 = activeSymbol1 ?? data.symbol1 ?? '';
-  const profitTotal = (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0) - gasIn1 - swapFeeIn1;
+  const perpPnlValue = perpPricePnlIn1 ?? 0;
+  const perpFeeValue = perpFeeIn1 ?? 0;
+  const profitTotal =
+    (data.pnl ?? 0) + (data.feeTotalIn1 ?? 0) + perpPnlValue - gasIn1 - swapFeeIn1 - perpFeeValue;
   // chart header shows latest pool price, not total profit.
   const baseSize = activeSizeIn1 ?? 0;
   const profitPct = baseSize > 0 ? (profitTotal / baseSize) * 100 : null;
@@ -892,32 +991,42 @@ async function loadStatus() {
   updateProfitSub();
   const pnlValue = data.pnl ?? 0;
   const feeValue = data.feeTotalIn1 ?? 0;
-  profitDetailEl.textContent = `PnL ${formatNumber(pnlValue, 2)} + Fees ${formatNumber(feeValue, 2)} - Gas ${formatNumber(gasIn1, 4)} - Swap ${formatNumber(swapFeeIn1, 4)}`;
+  const perpPnlLabel = perpPricePnlIn1 != null ? formatNumber(perpPnlValue, 2) : '-';
+  const costTotal = gasIn1 + swapFeeIn1 + perpFeeValue;
+  const costLabel = Number.isFinite(costTotal) ? formatNumber(costTotal, 2) : '-';
+  profitDetailEl.textContent =
+    `LP ${formatNumber(pnlValue, 2)} + Fees ${formatNumber(feeValue, 2)} ` +
+    `+ PERP ${perpPnlLabel} - Cost ${costLabel}`;
 
-  const pnlPos = Math.max(pnlValue, 0);
-  const feePos = Math.max(feeValue, 0);
-  const pnlNeg = Math.max(-pnlValue, 0);
-  const feeNeg = Math.max(-feeValue, 0);
-  const gasAbs = Math.abs(gasIn1 ?? 0);
-  const swapAbs = Math.abs(swapFeeIn1 ?? 0);
+  const lpPnlPos = Math.max(pnlValue, 0);
+  const lpPnlNeg = Math.max(-pnlValue, 0);
+  const lpFeePos = Math.max(feeValue, 0);
+  const lpFeeNeg = Math.max(-feeValue, 0);
+  const perpPos = Math.max(perpPnlValue, 0);
+  const perpNeg = Math.max(-perpPnlValue, 0);
+  const costAbs = Math.abs(costTotal);
 
-  const posTotal = pnlPos + feePos;
-  const negTotal = pnlNeg + feeNeg + gasAbs + swapAbs;
+  const posTotal = lpPnlPos + lpFeePos + perpPos;
+  const negTotal = lpPnlNeg + lpFeeNeg + perpNeg + costAbs;
   const maxTotal = Math.max(posTotal, negTotal);
   const posScale = maxTotal > 0 ? (posTotal / maxTotal) * 100 : 0;
   const negScale = maxTotal > 0 ? (negTotal / maxTotal) * 100 : 0;
 
-  const pnlPosRatio = posTotal > 0 ? (pnlPos / posTotal) * 100 : 0;
-  const feePosRatio = posTotal > 0 ? (feePos / posTotal) * 100 : 0;
-  const pnlNegRatio = negTotal > 0 ? (pnlNeg / negTotal) * 100 : 0;
-  const gasNegRatio = negTotal > 0 ? (gasAbs / negTotal) * 100 : 0;
-  const swapNegRatio = negTotal > 0 ? (swapAbs / negTotal) * 100 : 0;
+  const lpPnlPosRatio = posTotal > 0 ? (lpPnlPos / posTotal) * 100 : 0;
+  const lpFeePosRatio = posTotal > 0 ? (lpFeePos / posTotal) * 100 : 0;
+  const perpPosRatio = posTotal > 0 ? (perpPos / posTotal) * 100 : 0;
+  const lpPnlNegRatio = negTotal > 0 ? (lpPnlNeg / negTotal) * 100 : 0;
+  const lpFeeNegRatio = negTotal > 0 ? (lpFeeNeg / negTotal) * 100 : 0;
+  const perpNegRatio = negTotal > 0 ? (perpNeg / negTotal) * 100 : 0;
+  const costNegRatio = negTotal > 0 ? (costAbs / negTotal) * 100 : 0;
 
-  if (profitRatioPnlPos) profitRatioPnlPos.style.width = `${pnlPosRatio}%`;
-  if (profitRatioFeesPos) profitRatioFeesPos.style.width = `${feePosRatio}%`;
-  if (profitRatioPnlNeg) profitRatioPnlNeg.style.width = `${pnlNegRatio}%`;
-  if (profitRatioGas) profitRatioGas.style.width = `${gasNegRatio}%`;
-  if (profitRatioSwap) profitRatioSwap.style.width = `${swapNegRatio}%`;
+  if (profitRatioPnlPos) profitRatioPnlPos.style.width = `${lpPnlPosRatio}%`;
+  if (profitRatioFeesPos) profitRatioFeesPos.style.width = `${lpFeePosRatio}%`;
+  if (profitRatioPerpPos) profitRatioPerpPos.style.width = `${perpPosRatio}%`;
+  if (profitRatioPnlNeg) profitRatioPnlNeg.style.width = `${lpPnlNegRatio}%`;
+  if (profitRatioFeesNeg) profitRatioFeesNeg.style.width = `${lpFeeNegRatio}%`;
+  if (profitRatioPerpNeg) profitRatioPerpNeg.style.width = `${perpNegRatio}%`;
+  if (profitRatioCost) profitRatioCost.style.width = `${costNegRatio}%`;
   if (profitRatioPositiveBar) {
     profitRatioPositiveBar.style.width = `${posScale}%`;
   }
@@ -926,17 +1035,17 @@ async function loadStatus() {
   }
 
   if (profitRatioText) {
-    const totalAbs = posTotal + negTotal;
-    const pnlTotalRatio = totalAbs > 0 ? (Math.abs(pnlValue) / totalAbs) * 100 : 0;
-    const feeTotalRatio = totalAbs > 0 ? (Math.abs(feeValue) / totalAbs) * 100 : 0;
-    const gasTotalRatio = totalAbs > 0 ? (gasAbs / totalAbs) * 100 : 0;
-    const swapTotalRatio = totalAbs > 0 ? (swapAbs / totalAbs) * 100 : 0;
+    const totalAbs = lpPnlPos + lpPnlNeg + lpFeePos + lpFeeNeg + perpPos + perpNeg + costAbs;
+    const lpPnlTotalRatio = totalAbs > 0 ? ((lpPnlPos + lpPnlNeg) / totalAbs) * 100 : 0;
+    const lpFeeTotalRatio = totalAbs > 0 ? ((lpFeePos + lpFeeNeg) / totalAbs) * 100 : 0;
+    const perpPriceTotalRatio = totalAbs > 0 ? ((perpPos + perpNeg) / totalAbs) * 100 : 0;
+    const costTotalRatio = totalAbs > 0 ? (costAbs / totalAbs) * 100 : 0;
     profitRatioText.textContent =
       totalAbs > 0
-        ? `PnL ${formatNumber(pnlTotalRatio, 2)}% / Fees ${formatNumber(feeTotalRatio, 2)}% / Gas ${formatNumber(
-            gasTotalRatio,
+        ? `LP ${formatNumber(lpPnlTotalRatio, 2)}% / Fees ${formatNumber(
+            lpFeeTotalRatio,
             2
-          )}% / Swap ${formatNumber(swapTotalRatio, 2)}%`
+          )}% / PERP ${formatNumber(perpPriceTotalRatio, 2)}% / Cost ${formatNumber(costTotalRatio, 2)}%`
         : '-';
   }
   profitTotalEl.classList.toggle('profit-positive', profitTotal > 0);
@@ -984,6 +1093,10 @@ async function loadHistory() {
         row.gasCostIn1 != null ? `${formatSigned(-row.gasCostIn1, 4)} ${row.token1Symbol}` : '-';
       const swapFee =
         row.swapFeeIn1 != null ? `${formatSigned(-row.swapFeeIn1, 4)} ${row.token1Symbol}` : '-';
+      const perpPnl =
+        row.perpRealizedPnlIn1 != null ? `${formatSigned(row.perpRealizedPnlIn1, 4)} ${row.token1Symbol}` : '-';
+      const perpFees =
+        row.perpRealizedFeeIn1 != null ? `${formatSigned(-row.perpRealizedFeeIn1, 4)} ${row.token1Symbol}` : '-';
       const profitValue = computeProfitValue(row);
       const profitLabel = profitValue != null ? `${formatSigned(profitValue, 4)} ${row.token1Symbol}` : '-';
       const profitClass = profitValue == null ? '' : profitValue >= 0 ? 'positive' : 'negative';
@@ -1007,6 +1120,8 @@ async function loadHistory() {
         <td>${pnl}</td>
         <td>${gas}</td>
         <td>${swapFee}</td>
+        <td>${perpPnl}</td>
+        <td>${perpFees}</td>
         <td class="history-profit ${profitClass}">${profitLabel}</td>
         <td>${interestLabel}</td>
         <td>${closeReason}</td>
@@ -1611,6 +1726,111 @@ async function loadActivePosition() {
   createHint.textContent = isActive ? 'Activeポジションがあるため作成できません' : '';
 }
 
+async function loadPerpPositionSize() {
+  if (!perpSizeEl) return;
+  if (!lastActiveTokenId) {
+    resetPerpCard();
+    return;
+  }
+  try {
+    const rows = await fetchJson(`/perp/trades?token_id=${encodeURIComponent(lastActiveTokenId)}&limit=200`);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      resetPerpCard();
+      if (perpStatusEl) {
+        perpStatusEl.textContent = 'no-data';
+      }
+      return;
+    }
+    const market = rows[0]?.market ?? '-';
+    const baseSymbol = typeof market === 'string' && market.includes('-') ? market.split('-')[0] : 'BASE';
+    const rawQuote = typeof market === 'string' && market.includes('-') ? market.split('-')[1] : 'QUOTE';
+    const quoteSymbol = rawQuote === 'USD' ? 'USDC' : rawQuote;
+    perpQuoteSymbol = quoteSymbol;
+    const latestTime = perpAskUpdatedAt ? new Date(perpAskUpdatedAt).toLocaleString() : '-';
+    const { position, avgEntry } = computeNetPosition(rows);
+    let status = 'flat';
+    let size = 0;
+    if (position < 0) {
+      status = 'short';
+      size = Math.abs(position);
+    } else if (position > 0) {
+      status = 'long';
+      size = position;
+    }
+    if (perpStatusEl) {
+      perpStatusEl.textContent = status;
+      perpStatusEl.classList.toggle('warn', status === 'short');
+      perpStatusEl.classList.toggle('ok', status === 'long');
+    }
+    if (size > 0 && perpAskPrice != null) {
+      const notional = size * perpAskPrice;
+      let pnl = 0;
+      let pct = 0;
+      if (avgEntry > 0) {
+        const priceDelta = perpAskPrice - avgEntry;
+        const signedDelta = status === 'short' ? -priceDelta : priceDelta;
+        pnl = signedDelta * size;
+        pct = (signedDelta / avgEntry) * 100;
+      }
+      perpSizeEl.textContent = `${formatActiveValue(notional)} ${quoteSymbol}`;
+      if (perpPnlEl) {
+        perpPnlEl.textContent = `${formatSigned(pnl, 2)} (${formatPercent(pct)}%)`;
+      }
+      const lpGas = Number(activeGasIn1 ?? 0);
+      const lpSwapFee = Number(activeSwapFeeIn1 ?? 0);
+      const shortFees = rows.reduce((sum, row) => {
+        const fee = Number(row.fee);
+        if (!Number.isFinite(fee)) return sum;
+        return row.side === 'SELL' ? sum + fee : sum;
+      }, 0);
+      const perpHoldingFee = notional * 0.00025;
+      const perpFeeTotal = shortFees + perpHoldingFee;
+      perpPricePnlIn1 = pnl;
+      perpFeeIn1 = perpFeeTotal;
+      const totalCost = lpGas + lpSwapFee + perpFeeTotal;
+      if (costTotalEl) costTotalEl.textContent = `${formatActiveValue(totalCost)} ${quoteSymbol}`;
+      if (costDetailEl) {
+        costDetailEl.textContent = `LP Gas ${formatActiveValue(lpGas)}, Swap ${formatActiveValue(lpSwapFee)}, PERP Fee ${formatActiveValue(perpFeeTotal)}`;
+      }
+      if (totalCost > 0) {
+        const gasPct = (lpGas / totalCost) * 100;
+        const swapPct = (lpSwapFee / totalCost) * 100;
+        const perpPct = (perpFeeTotal / totalCost) * 100;
+        if (costBarGasEl) costBarGasEl.style.width = `${gasPct}%`;
+        if (costBarSwapEl) costBarSwapEl.style.width = `${swapPct}%`;
+        if (costBarPerpEl) costBarPerpEl.style.width = `${perpPct}%`;
+      } else {
+        if (costBarGasEl) costBarGasEl.style.width = '0%';
+        if (costBarSwapEl) costBarSwapEl.style.width = '0%';
+        if (costBarPerpEl) costBarPerpEl.style.width = '0%';
+      }
+    } else if (size > 0) {
+      perpSizeEl.textContent = `${formatActiveValue(size)} ${baseSymbol}`;
+      if (perpPnlEl) perpPnlEl.textContent = '-';
+      perpPricePnlIn1 = null;
+      perpFeeIn1 = null;
+      if (costTotalEl) costTotalEl.textContent = '-';
+      if (costDetailEl) costDetailEl.textContent = '-';
+      if (costBarGasEl) costBarGasEl.style.width = '0%';
+      if (costBarSwapEl) costBarSwapEl.style.width = '0%';
+      if (costBarPerpEl) costBarPerpEl.style.width = '0%';
+    } else {
+      perpSizeEl.textContent = '-';
+      if (perpPnlEl) perpPnlEl.textContent = '-';
+      perpPricePnlIn1 = null;
+      perpFeeIn1 = null;
+      if (costTotalEl) costTotalEl.textContent = '-';
+      if (costDetailEl) costDetailEl.textContent = '-';
+      if (costBarGasEl) costBarGasEl.style.width = '0%';
+      if (costBarSwapEl) costBarSwapEl.style.width = '0%';
+      if (costBarPerpEl) costBarPerpEl.style.width = '0%';
+    }
+    if (perpUpdatedEl) perpUpdatedEl.textContent = `Updated ${latestTime}`;
+  } catch (error) {
+    console.error(error);
+  }
+}
+
 if (configForm) {
   const tickField = configForm.elements.namedItem('tickRange');
   if (tickField) {
@@ -1716,7 +1936,12 @@ async function boot() {
   setInterval(() => {
     loadStatus().catch((error) => console.error(error));
     loadActivePosition().catch((error) => console.error(error));
+    loadPerpPositionSize().catch((error) => console.error(error));
   }, 4000);
+  loadPerpAskPrice().catch((error) => console.error(error));
+  setInterval(() => {
+    loadPerpAskPrice().catch((error) => console.error(error));
+  }, 5000);
   setInterval(() => {
     loadWallet().catch((error) => console.error(error));
   }, 10000);

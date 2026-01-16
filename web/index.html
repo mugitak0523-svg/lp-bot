@@ -80,17 +80,49 @@
                   <div class="ratio-bar ratio-positive" id="profit-ratio-positive">
                     <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl-pos"></div>
                     <div class="ratio-fill ratio-fees" id="profit-ratio-fees-pos"></div>
+                    <div class="ratio-fill ratio-swap" id="profit-ratio-perp-pos"></div>
                   </div>
                   <div class="ratio-bar ratio-negative" id="profit-ratio-negative">
                     <div class="ratio-fill ratio-pnl" id="profit-ratio-pnl-neg"></div>
-                    <div class="ratio-fill ratio-gas" id="profit-ratio-gas"></div>
-                    <div class="ratio-fill ratio-swap" id="profit-ratio-swap"></div>
+                    <div class="ratio-fill ratio-fees" id="profit-ratio-fees-neg"></div>
+                    <div class="ratio-fill ratio-swap" id="profit-ratio-perp-neg"></div>
+                    <div class="ratio-fill ratio-gas" id="profit-ratio-cost"></div>
                   </div>
                 </div>
                 <p class="ratio-text profit-ratio-text" id="profit-ratio-text">-</p>
               </article>
             </div>
           <div class="grid-bottom">
+            <article class="card" id="card-perp">
+              <div class="card-header">
+                <h2 class="card-title">PERP Position Size</h2>
+              </div>
+              <p class="stat-value">
+                <span id="perp-size-value">-</span>
+                <span class="value-inline" id="perp-size-pnl">-</span>
+              </p>
+              <p class="stat-sub" id="perp-updated">Updated -</p>
+            </article>
+
+            <article class="card" id="card-cost">
+              <div class="card-header">
+                <h2 class="card-title">Cost</h2>
+              </div>
+              <p class="stat-value" id="cost-total">-</p>
+              <div class="ratio-bar" aria-hidden="true">
+                <div class="ratio-fill ratio-pnl" id="cost-bar-gas"></div>
+                <div class="ratio-fill ratio-fees" id="cost-bar-swap"></div>
+                <div class="ratio-fill ratio-swap" id="cost-bar-perp"></div>
+              </div>
+              <p class="stat-sub" id="cost-detail">-</p>
+            </article>
+
+            <article class="card empty-card" id="card-empty-2">
+              <p class="stat-sub">-</p>
+            </article>
+          </div>
+
+          <div class="grid-secondary">
             <article class="card" id="card-active">
               <div class="card-header">
                 <h2 class="card-title">Active Position</h2>
@@ -137,25 +169,25 @@
               </details>
             </article>
 
-          <article class="card" id="card-live">
-            <h2 class="card-title live-title">LIVE<span class="live-dot" aria-hidden="true"></span></h2>
-            <p class="stat-value" id="price">-</p>
-            <p class="stat-sub">Created Price <span id="created-price">-</span></p>
-            <p class="stat-sub"><span class="stat-value inline" id="hold-time">-</span></p>
-            <p class="stat-sub">Created at <span id="created-at">-</span></p>
-            <p class="stat-sub">
-              <span class="stat-value inline" id="rebalance-eta-remaining">-</span>
-              <span class="stat-value inline" id="rebalance-eta-total">/ -</span>
-            </p>
-          </article>
-          <article class="card log-card" id="card-logs">
-            <div class="chart-header">
-              <h2 class="card-title">Monitor Logs</h2>
-              <span class="stat-sub" id="log-status">-</span>
-            </div>
-            <pre class="log-stream" id="monitor-logs">-</pre>
-          </article>
-            </div>
+            <article class="card" id="card-live">
+              <h2 class="card-title live-title">LIVE<span class="live-dot" aria-hidden="true"></span></h2>
+              <p class="stat-value" id="price">-</p>
+              <p class="stat-sub">Created Price <span id="created-price">-</span></p>
+              <p class="stat-sub"><span class="stat-value inline" id="hold-time">-</span></p>
+              <p class="stat-sub">Created at <span id="created-at">-</span></p>
+              <p class="stat-sub">
+                <span class="stat-value inline" id="rebalance-eta-remaining">-</span>
+                <span class="stat-value inline" id="rebalance-eta-total">/ -</span>
+              </p>
+            </article>
+            <article class="card log-card" id="card-logs">
+              <div class="chart-header">
+                <h2 class="card-title">Monitor Logs</h2>
+                <span class="stat-sub" id="log-status">-</span>
+              </div>
+              <pre class="log-stream" id="monitor-logs">-</pre>
+            </article>
+          </div>
           <div class="grid-charts">
             <article class="card chart-card" id="card-chart">
               <div class="chart-header">
@@ -335,6 +367,8 @@
                     <th>PnL</th>
                     <th>Gas</th>
                     <th>Swap Fee</th>
+                    <th>PERP PnL</th>
+                    <th>PERP Fees</th>
                     <th>Profit</th>
                     <th>Interest</th>
                     <th>Close Reason</th>

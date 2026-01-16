@@ -513,6 +513,13 @@ h1 {
   min-width: 0;
 }
 
+.grid-secondary {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
 .grid-charts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
@@ -533,6 +540,7 @@ h1 {
 
   .grid-top,
   .grid-bottom,
+  .grid-secondary,
   .grid-charts {
     display: contents;
   }
@@ -552,30 +560,53 @@ h1 {
     grid-column: 5 / span 2;
   }
 
-  #card-active {
+  #card-perp {
     order: 4;
-    grid-column: 1 / span 3;
+    grid-column: 1 / span 2;
   }
 
-  #card-live {
+  #card-cost {
     order: 5;
-    grid-column: 4 / span 3;
+    grid-column: 3 / span 2;
   }
 
-  #card-chart {
+  #card-empty-2 {
+    order: 6;
+    grid-column: 5 / span 2;
+  }
+
+  #card-active {
     order: 7;
     grid-column: 1 / span 3;
   }
 
-  #card-fee-chart {
+  #card-live {
     order: 8;
     grid-column: 4 / span 3;
   }
 
   #card-logs {
-    order: 6;
+    order: 9;
     grid-column: 1 / span 6;
   }
+
+  #card-chart {
+    order: 10;
+    grid-column: 1 / span 3;
+  }
+
+  #card-fee-chart {
+    order: 11;
+    grid-column: 4 / span 3;
+  }
+}
+
+.empty-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  min-height: 120px;
 }
 
 .chart-card {

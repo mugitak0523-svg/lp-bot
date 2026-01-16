@@ -23,6 +23,7 @@ import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
 import { loadPoolContext } from '../uniswap/pool';
 import { listPerpTrades } from '../db/perp_trades';
+import { getPerpPositions, subscribePerpPositions } from '../state/perp';
 
 export type ApiActions = {
   rebalance?: () => Promise<void>;
@@ -333,6 +334,45 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     res.json(row);
   });
 
+  app.get('/positions/active/price', async (_req, res) => {
+    const active = await getLatestActivePosition(db);
+    if (!active) {
+      res.json({ status: 'no-data' });
+      return;
+    }
+    try {
+      const settings = loadSettings();
+      const provider = createHttpProvider(settings.rpcUrl);
+      const poolContext = await loadPoolContext(provider, settings.poolAddress, settings.chainId);
+      const price0In1 = Number(poolContext.pool.token0Price.toSignificant(8));
+      res.json({
+        tokenId: active.tokenId,
+        price0In1,
+        token0Symbol: poolContext.token0.symbol,
+        token1Symbol: poolContext.token1.symbol,
+        currentTick: poolContext.slot0.tick,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get('/perp/mark-price', async (req, res) => {
+    try {
+      const market = typeof req.query.market === 'string' ? req.query.market : process.env.PERP_MARKET ?? 'ETH-USD';
+      const result = await runExtendedCli('mark_price', { market });
+      if (!result.ok) {
+        res.status(result.status_code ?? 502).json({ error: result.error });
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
   app.get('/perp/trades', async (req, res) => {
     try {
       const tokenId = typeof req.query.token_id === 'string' ? req.query.token_id : undefined;
@@ -344,6 +384,37 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       const message = error instanceof Error ? error.message : String(error);
       res.status(500).json({ error: message });
     }
+  });
+
+  app.get('/perp/positions', (_req, res) => {
+    const snapshot = getPerpPositions();
+    if (!snapshot) {
+      res.json({ status: 'no-data' });
+      return;
+    }
+    res.json(snapshot);
+  });
+
+  app.get('/perp/positions/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendSnapshot = (snapshot: ReturnType<typeof getPerpPositions>) => {
+      if (!snapshot) return;
+      res.write(`event: positions\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    };
+
+    sendSnapshot(getPerpPositions());
+    const unsubscribe = subscribePerpPositions((snapshot) => {
+      sendSnapshot(snapshot);
+    });
+
+    req.on('close', () => {
+      unsubscribe();
+      res.end();
+    });
   });
 
   app.post('/action/rebalance', (_req, res) => {

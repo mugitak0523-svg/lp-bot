@@ -12,6 +12,7 @@ import {
   closePositionWithDetails,
   getLatestActivePosition,
   insertPosition,
+  updatePerpCloseDetails,
 } from './db/positions';
 import { awaitDbReady, initDb } from './db/sqlite';
 import { loadSettings } from './config/settings';
@@ -19,6 +20,8 @@ import { clearSnapshot, getConfig, MonitorSnapshot, setSnapshot } from './state/
 import { sendDiscordMessage } from './utils/discord';
 import { createHttpProvider } from './utils/provider';
 import { closePerpHedge, openPerpHedge } from './perp/hedge';
+import { startPerpAccountStream } from './perp/ws';
+import { computePerpRealizedForTokenId } from './db/perp_trades';
 
 const port = Number(process.env.PORT ?? '3000');
 const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
@@ -53,6 +56,26 @@ async function handlePerpClose(tokenId: string): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     console.error('PERP close error:', message);
     sendDiscordMessage(webhookUrl, `PERP close error: ${message}`, 'error');
+  }
+}
+
+async function finalizePerpClose(tokenId: string): Promise<void> {
+  const result = await computePerpRealizedForTokenId(db, tokenId);
+  await updatePerpCloseDetails(db, tokenId, {
+    perpRealizedPnlIn1: result.pnl,
+    perpRealizedFeeIn1: result.fee,
+  });
+}
+
+async function handlePerpCloseStrict(tokenId: string): Promise<void> {
+  try {
+    await closePerpHedge({ db, tokenId });
+    await finalizePerpClose(tokenId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('PERP close error:', message);
+    sendDiscordMessage(webhookUrl, `PERP close error: ${message}`, 'error');
+    throw error;
   }
 }
 
@@ -288,7 +311,9 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await finalizePerpClose(active.tokenId);
         await handlePerpClose(active.tokenId);
+        await finalizePerpClose(active.tokenId);
         sendDiscordMessage(
           webhookUrl,
           buildCloseSummary({
@@ -346,7 +371,9 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await finalizePerpClose(active.tokenId);
         await handlePerpClose(active.tokenId);
+        await finalizePerpClose(active.tokenId);
         await maybeStopMonitor();
         sendDiscordMessage(
           webhookUrl,
@@ -404,7 +431,12 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           slippageToleranceBps: rebalanceConfig.slippageBps,
           targetTotalToken1: rebalanceConfig.targetTotalToken1,
         },
-        'auto'
+        'auto',
+        {
+          onAfterClose: async () => {
+            await handlePerpCloseStrict(active.tokenId);
+          },
+        }
       );
       if (active) {
         const details: CloseDetails = {
@@ -416,7 +448,6 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
-        await handlePerpClose(active.tokenId);
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
@@ -480,7 +511,12 @@ const apiActions = {
           slippageToleranceBps: rebalanceConfig.slippageBps,
           targetTotalToken1: rebalanceConfig.targetTotalToken1,
         },
-        'manual'
+        'manual',
+        {
+          onAfterClose: async () => {
+            await handlePerpCloseStrict(active.tokenId);
+          },
+        }
       );
       if (active) {
         const details: CloseDetails = {
@@ -492,7 +528,6 @@ const apiActions = {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
-        await handlePerpClose(active.tokenId);
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
@@ -560,6 +595,7 @@ const apiActions = {
       };
       await closePositionWithDetails(db, active.tokenId, details);
       await handlePerpClose(active.tokenId);
+      await finalizePerpClose(active.tokenId);
       await maybeStopMonitor();
       sendDiscordMessage(
         webhookUrl,
@@ -673,6 +709,9 @@ async function maybeStopMonitor(): Promise<void> {
 async function bootstrap(): Promise<void> {
   await awaitDbReady();
   startApiServer(port, apiActions);
+  if (process.env.PERP_WS_ENABLED !== 'false') {
+    startPerpAccountStream();
+  }
   await maybeStartMonitor();
 }
 
