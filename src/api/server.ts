@@ -1,4 +1,3 @@
-import { spawn } from 'child_process';
 import express from 'express';
 import https from 'https';
 import path from 'path';
@@ -11,6 +10,7 @@ import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/inter
 import PoolABI from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json';
 
 import { getConfig, getLogs, getSnapshot, updateConfig } from '../state/store';
+import { runExtendedCli } from '../extended/client';
 import {
   deletePositionsByTokenIds,
   getLatestActivePosition,
@@ -22,53 +22,13 @@ import { getDb } from '../db/sqlite';
 import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
 import { loadPoolContext } from '../uniswap/pool';
+import { listPerpTrades } from '../db/perp_trades';
 
 export type ApiActions = {
   rebalance?: () => Promise<void>;
   close?: () => Promise<void>;
   mint?: () => Promise<void>;
 };
-
-type ExtendedCliResult =
-  | { ok: true; data: unknown; retry_attempts?: number }
-  | { ok: false; error: string; status_code?: number; retry_attempts?: number };
-
-const extendedExampleDir = path.resolve(process.cwd(), 'extended_example');
-const extendedCliPath = path.resolve(process.cwd(), 'src', 'extended', 'cli.py');
-const extendedPythonBin = process.env.EXTENDED_PYTHON_BIN ?? 'python3';
-
-function runExtendedCli(command: string, payload: Record<string, unknown>): Promise<ExtendedCliResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(extendedPythonBin, [extendedCliPath, command], {
-      cwd: extendedExampleDir,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-    child.on('error', reject);
-    child.on('close', () => {
-      const output = stdout.trim();
-      if (!output) {
-        reject(new Error(stderr.trim() || 'extended cli returned empty output'));
-        return;
-      }
-      try {
-        resolve(JSON.parse(output));
-      } catch (error) {
-        const message = stderr.trim() || String(error);
-        reject(new Error(`failed to parse extended cli output: ${message}`));
-      }
-    });
-    child.stdin.write(JSON.stringify(payload ?? {}));
-    child.stdin.end();
-  });
-}
 
 export function startApiServer(port: number, actions: ApiActions = {}): void {
   const app = express();
@@ -371,6 +331,19 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       return;
     }
     res.json(row);
+  });
+
+  app.get('/perp/trades', async (req, res) => {
+    try {
+      const tokenId = typeof req.query.token_id === 'string' ? req.query.token_id : undefined;
+      const market = typeof req.query.market === 'string' ? req.query.market : undefined;
+      const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+      const rows = await listPerpTrades(db, { tokenId, market, limit });
+      res.json(rows);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
   });
 
   app.post('/action/rebalance', (_req, res) => {
