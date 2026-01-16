@@ -70,7 +70,6 @@ async function finalizePerpClose(tokenId: string): Promise<void> {
 async function handlePerpCloseStrict(tokenId: string): Promise<void> {
   try {
     await closePerpHedge({ db, tokenId });
-    await finalizePerpClose(tokenId);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('PERP close error:', message);
@@ -311,7 +310,6 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
-        await finalizePerpClose(active.tokenId);
         await handlePerpClose(active.tokenId);
         await finalizePerpClose(active.tokenId);
         sendDiscordMessage(
@@ -371,7 +369,6 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
-        await finalizePerpClose(active.tokenId);
         await handlePerpClose(active.tokenId);
         await finalizePerpClose(active.tokenId);
         await maybeStopMonitor();
@@ -448,6 +445,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await finalizePerpClose(active.tokenId);
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
@@ -528,6 +526,7 @@ const apiActions = {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await finalizePerpClose(active.tokenId);
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }

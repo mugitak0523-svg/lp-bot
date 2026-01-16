@@ -17,12 +17,13 @@ import {
   getLatestPosition,
   listPositions,
   updateActivePositionConfig,
+  updatePerpCloseDetails,
 } from '../db/positions';
 import { getDb } from '../db/sqlite';
 import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
 import { loadPoolContext } from '../uniswap/pool';
-import { listPerpTrades } from '../db/perp_trades';
+import { computePerpRealizedForTokenId, listPerpTrades } from '../db/perp_trades';
 import { getPerpPositions, subscribePerpPositions } from '../state/perp';
 
 export type ApiActions = {
@@ -302,6 +303,24 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
   app.get('/positions', async (req, res) => {
     const limit = Number(req.query.limit ?? '50');
     const rows = await listPositions(db, Number.isFinite(limit) ? limit : 50);
+    await Promise.all(
+      rows.map(async (row) => {
+        if (row.status !== 'closed') return;
+        if (row.perpRealizedPnlIn1 != null && row.perpRealizedFeeIn1 != null) return;
+        const result = await computePerpRealizedForTokenId(db, row.tokenId);
+        if (result.pnl == null && result.fee == null) return;
+        await updatePerpCloseDetails(db, row.tokenId, {
+          perpRealizedPnlIn1: result.pnl,
+          perpRealizedFeeIn1: result.fee,
+        });
+        if (result.pnl != null) {
+          row.perpRealizedPnlIn1 = result.pnl;
+        }
+        if (result.fee != null) {
+          row.perpRealizedFeeIn1 = result.fee;
+        }
+      })
+    );
     res.json(rows);
   });
 
