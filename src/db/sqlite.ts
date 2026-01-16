@@ -63,7 +63,28 @@ export function initDb(filePath: string): SqliteDb {
       );
       CREATE INDEX IF NOT EXISTS idx_positions_token_id ON positions(token_id);
       CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
-      CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);`,
+      CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);
+
+      CREATE TABLE IF NOT EXISTS perp_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_id TEXT NOT NULL UNIQUE,
+        order_id TEXT NOT NULL,
+        token_id TEXT NOT NULL,
+        position_id INTEGER,
+        market TEXT NOT NULL,
+        side TEXT NOT NULL,
+        qty TEXT NOT NULL,
+        price TEXT NOT NULL,
+        value TEXT,
+        fee TEXT,
+        is_taker INTEGER NOT NULL DEFAULT 0,
+        trade_type TEXT,
+        created_time INTEGER NOT NULL,
+        raw_json TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_perp_trades_token_id ON perp_trades(token_id);
+      CREATE INDEX IF NOT EXISTS idx_perp_trades_order_id ON perp_trades(order_id);
+      CREATE INDEX IF NOT EXISTS idx_perp_trades_created_time ON perp_trades(created_time);`,
       (err) => {
         if (err) {
           reject(err);
