@@ -42,6 +42,8 @@ export function initDb(filePath: string): SqliteDb {
         gas_cost_native TEXT,
         gas_cost_in_1 REAL,
         swap_fee_in_1 REAL,
+        perp_realized_pnl_in_1 REAL,
+        perp_realized_fee_in_1 REAL,
         config_tick_range REAL,
         config_rebalance_delay_sec REAL,
         config_slippage_bps REAL,
@@ -63,7 +65,28 @@ export function initDb(filePath: string): SqliteDb {
       );
       CREATE INDEX IF NOT EXISTS idx_positions_token_id ON positions(token_id);
       CREATE INDEX IF NOT EXISTS idx_positions_status ON positions(status);
-      CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);`,
+      CREATE INDEX IF NOT EXISTS idx_positions_created_at ON positions(created_at);
+
+      CREATE TABLE IF NOT EXISTS perp_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        trade_id TEXT NOT NULL UNIQUE,
+        order_id TEXT NOT NULL,
+        token_id TEXT NOT NULL,
+        position_id INTEGER,
+        market TEXT NOT NULL,
+        side TEXT NOT NULL,
+        qty TEXT NOT NULL,
+        price TEXT NOT NULL,
+        value TEXT,
+        fee TEXT,
+        is_taker INTEGER NOT NULL DEFAULT 0,
+        trade_type TEXT,
+        created_time INTEGER NOT NULL,
+        raw_json TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_perp_trades_token_id ON perp_trades(token_id);
+      CREATE INDEX IF NOT EXISTS idx_perp_trades_order_id ON perp_trades(order_id);
+      CREATE INDEX IF NOT EXISTS idx_perp_trades_created_time ON perp_trades(created_time);`,
       (err) => {
         if (err) {
           reject(err);
@@ -76,6 +99,8 @@ export function initDb(filePath: string): SqliteDb {
           ensureColumn(db, 'positions', 'closed_at', 'TEXT'),
           ensureColumn(db, 'positions', 'close_reason', 'TEXT'),
           ensureColumn(db, 'positions', 'swap_fee_in_1', 'REAL'),
+          ensureColumn(db, 'positions', 'perp_realized_pnl_in_1', 'REAL'),
+          ensureColumn(db, 'positions', 'perp_realized_fee_in_1', 'REAL'),
           ensureColumn(db, 'positions', 'config_tick_range', 'REAL'),
           ensureColumn(db, 'positions', 'config_rebalance_delay_sec', 'REAL'),
           ensureColumn(db, 'positions', 'config_slippage_bps', 'REAL'),

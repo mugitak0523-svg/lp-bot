@@ -5,3 +5,15 @@ curl -X POST http://localhost:3000/positions/delete \
   curl -X POST https://lp-bot-production.up.railway.app/positions/delete \
   -H "Content-Type: application/json" \
   -d '{"tokenIds":["5208109"]}'
+
+  curl -X POST http://localhost:3000/orders/market \
+  -H "Content-Type: application/json" \
+  -d '{"side":"BUY","size":"0.01","market":"ETH-USD","max_slippage_pct":"0.02","reduce_only":true}'
+
+    curl -X POST http://localhost:3000/orders/market \
+  -H "Content-Type: application/json" \
+  -d '{"side":"SELL","size":"0.01","market":"ETH-USD","max_slippage_pct":"0.02","reduce_only":false}'
+
+  curl "http://localhost:3000/orders/2011809447261200400"
+
+curl "http://localhost:3000/trades?market=ETH-USD&limit=10"

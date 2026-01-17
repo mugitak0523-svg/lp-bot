@@ -10,17 +10,21 @@ import IERC20_METADATA_ABI from '@uniswap/v3-periphery/artifacts/contracts/inter
 import PoolABI from '@uniswap/v3-core/artifacts/contracts/UniswapV3Pool.sol/UniswapV3Pool.json';
 
 import { getConfig, getLogs, getSnapshot, updateConfig } from '../state/store';
+import { runExtendedCli } from '../extended/client';
 import {
   deletePositionsByTokenIds,
   getLatestActivePosition,
   getLatestPosition,
   listPositions,
   updateActivePositionConfig,
+  updatePerpCloseDetails,
 } from '../db/positions';
 import { getDb } from '../db/sqlite';
 import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
 import { loadPoolContext } from '../uniswap/pool';
+import { computePerpRealizedForTokenId, listPerpTrades } from '../db/perp_trades';
+import { getPerpPositions, subscribePerpPositions } from '../state/perp';
 
 export type ApiActions = {
   rebalance?: () => Promise<void>;
@@ -41,6 +45,74 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       return;
     }
     res.json(snapshot);
+  });
+
+  app.post('/orders/market', async (req, res) => {
+    try {
+      const payload = typeof req.body === 'object' && req.body ? req.body : {};
+      const result = await runExtendedCli('market_order', payload);
+      if (!result.ok) {
+        res.status(result.status_code ?? 502).json({ error: result.error });
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.get('/orders/:id', async (req, res) => {
+    try {
+      const orderId = req.params.id;
+      if (!/^\d+$/.test(orderId)) {
+        res.status(400).json({ error: 'invalid order id' });
+        return;
+      }
+      const result = await runExtendedCli('order_by_id', { order_id: orderId });
+      if (!result.ok) {
+        const body: Record<string, unknown> = { error: result.error };
+        if ('retry_attempts' in result && result.retry_attempts != null) {
+          body.retry_attempts = result.retry_attempts;
+        }
+        res.status(result.status_code ?? 502).json(body);
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: message });
+    }
+  });
+
+  app.get('/trades', async (req, res) => {
+    try {
+      const marketQuery = req.query.market;
+      const market = Array.isArray(marketQuery)
+        ? marketQuery.map((value) => String(value))
+        : marketQuery
+          ? [String(marketQuery)]
+          : undefined;
+      const side = typeof req.query.side === 'string' ? req.query.side : undefined;
+      const tradeType = typeof req.query.trade_type === 'string' ? req.query.trade_type : undefined;
+      const cursor = typeof req.query.cursor === 'string' ? Number(req.query.cursor) : undefined;
+      const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+      const payload: Record<string, unknown> = {};
+      if (market) payload.market = market;
+      if (side) payload.side = side;
+      if (tradeType) payload.trade_type = tradeType;
+      if (Number.isFinite(cursor)) payload.cursor = cursor;
+      if (Number.isFinite(limit)) payload.limit = limit;
+      const result = await runExtendedCli('trades', payload);
+      if (!result.ok) {
+        res.status(result.status_code ?? 502).json({ error: result.error });
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(502).json({ error: message });
+    }
   });
 
   app.get('/pool/price', async (_req, res) => {
@@ -231,6 +303,24 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
   app.get('/positions', async (req, res) => {
     const limit = Number(req.query.limit ?? '50');
     const rows = await listPositions(db, Number.isFinite(limit) ? limit : 50);
+    await Promise.all(
+      rows.map(async (row) => {
+        if (row.status !== 'closed') return;
+        if (row.perpRealizedPnlIn1 != null && row.perpRealizedFeeIn1 != null) return;
+        const result = await computePerpRealizedForTokenId(db, row.tokenId);
+        if (result.pnl == null && result.fee == null) return;
+        await updatePerpCloseDetails(db, row.tokenId, {
+          perpRealizedPnlIn1: result.pnl,
+          perpRealizedFeeIn1: result.fee,
+        });
+        if (result.pnl != null) {
+          row.perpRealizedPnlIn1 = result.pnl;
+        }
+        if (result.fee != null) {
+          row.perpRealizedFeeIn1 = result.fee;
+        }
+      })
+    );
     res.json(rows);
   });
 
@@ -261,6 +351,89 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       return;
     }
     res.json(row);
+  });
+
+  app.get('/positions/active/price', async (_req, res) => {
+    const active = await getLatestActivePosition(db);
+    if (!active) {
+      res.json({ status: 'no-data' });
+      return;
+    }
+    try {
+      const settings = loadSettings();
+      const provider = createHttpProvider(settings.rpcUrl);
+      const poolContext = await loadPoolContext(provider, settings.poolAddress, settings.chainId);
+      const price0In1 = Number(poolContext.pool.token0Price.toSignificant(8));
+      res.json({
+        tokenId: active.tokenId,
+        price0In1,
+        token0Symbol: poolContext.token0.symbol,
+        token1Symbol: poolContext.token1.symbol,
+        currentTick: poolContext.slot0.tick,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get('/perp/mark-price', async (req, res) => {
+    try {
+      const market = typeof req.query.market === 'string' ? req.query.market : process.env.PERP_MARKET ?? 'ETH-USD';
+      const result = await runExtendedCli('mark_price', { market });
+      if (!result.ok) {
+        res.status(result.status_code ?? 502).json({ error: result.error });
+        return;
+      }
+      res.json(result.data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get('/perp/trades', async (req, res) => {
+    try {
+      const tokenId = typeof req.query.token_id === 'string' ? req.query.token_id : undefined;
+      const market = typeof req.query.market === 'string' ? req.query.market : undefined;
+      const limit = typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined;
+      const rows = await listPerpTrades(db, { tokenId, market, limit });
+      res.json(rows);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.get('/perp/positions', (_req, res) => {
+    const snapshot = getPerpPositions();
+    if (!snapshot) {
+      res.json({ status: 'no-data' });
+      return;
+    }
+    res.json(snapshot);
+  });
+
+  app.get('/perp/positions/stream', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const sendSnapshot = (snapshot: ReturnType<typeof getPerpPositions>) => {
+      if (!snapshot) return;
+      res.write(`event: positions\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    };
+
+    sendSnapshot(getPerpPositions());
+    const unsubscribe = subscribePerpPositions((snapshot) => {
+      sendSnapshot(snapshot);
+    });
+
+    req.on('close', () => {
+      unsubscribe();
+      res.end();
+    });
   });
 
   app.post('/action/rebalance', (_req, res) => {

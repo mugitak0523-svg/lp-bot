@@ -203,7 +203,8 @@ export async function closePosition(overrides: Partial<WriteSettings> = {}): Pro
 
 export async function runRebalance(
   overrides: Partial<WriteSettings> = {},
-  reason = 'auto'
+  reason = 'auto',
+  hooks?: { onAfterClose?: () => Promise<void> }
 ): Promise<RebalanceResult> {
   const settings = { ...loadWriteSettings(), ...overrides };
   const providers = createHybridProvider(settings.rpcUrl, settings.rpcWss);
@@ -241,6 +242,10 @@ export async function runRebalance(
   const collected = parseEventAmounts(collectReceipt);
   console.log(`   - Collected amount0=${ethers.utils.formatUnits(collected.amount0, poolContext.token0.decimals)}`);
   console.log(`   - Collected amount1=${ethers.utils.formatUnits(collected.amount1, poolContext.token1.decimals)}`);
+
+  if (hooks?.onAfterClose) {
+    await hooks.onAfterClose();
+  }
 
   const token0Contract = getErc20(poolContext.token0.address, signer);
   const token1Contract = getErc20(poolContext.token1.address, signer);

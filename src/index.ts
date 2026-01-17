@@ -12,12 +12,16 @@ import {
   closePositionWithDetails,
   getLatestActivePosition,
   insertPosition,
+  updatePerpCloseDetails,
 } from './db/positions';
 import { awaitDbReady, initDb } from './db/sqlite';
 import { loadSettings } from './config/settings';
 import { clearSnapshot, getConfig, MonitorSnapshot, setSnapshot } from './state/store';
 import { sendDiscordMessage } from './utils/discord';
 import { createHttpProvider } from './utils/provider';
+import { closePerpHedge, openPerpHedge } from './perp/hedge';
+import { startPerpAccountStream } from './perp/ws';
+import { computePerpRealizedForTokenId } from './db/perp_trades';
 
 const port = Number(process.env.PORT ?? '3000');
 const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
@@ -34,6 +38,45 @@ const state = {
   monitorTokenId: null as string | null,
   monitorController: null as MonitorController | null,
 };
+
+async function handlePerpOpen(tokenId: string, amount0: string, token0Decimals: number): Promise<void> {
+  try {
+    await openPerpHedge({ db, tokenId, amount0, token0Decimals });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('PERP open error:', message);
+    sendDiscordMessage(webhookUrl, `PERP open error: ${message}`, 'error');
+  }
+}
+
+async function handlePerpClose(tokenId: string): Promise<void> {
+  try {
+    await closePerpHedge({ db, tokenId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('PERP close error:', message);
+    sendDiscordMessage(webhookUrl, `PERP close error: ${message}`, 'error');
+  }
+}
+
+async function finalizePerpClose(tokenId: string): Promise<void> {
+  const result = await computePerpRealizedForTokenId(db, tokenId);
+  await updatePerpCloseDetails(db, tokenId, {
+    perpRealizedPnlIn1: result.pnl,
+    perpRealizedFeeIn1: result.fee,
+  });
+}
+
+async function handlePerpCloseStrict(tokenId: string): Promise<void> {
+  try {
+    await closePerpHedge({ db, tokenId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('PERP close error:', message);
+    sendDiscordMessage(webhookUrl, `PERP close error: ${message}`, 'error');
+    throw error;
+  }
+}
 
 function formatNumber(value: number | null | undefined, digits = 4): string {
   if (value == null || !Number.isFinite(value)) return '-';
@@ -267,6 +310,8 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await handlePerpClose(active.tokenId);
+        await finalizePerpClose(active.tokenId);
         sendDiscordMessage(
           webhookUrl,
           buildCloseSummary({
@@ -324,6 +369,8 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await handlePerpClose(active.tokenId);
+        await finalizePerpClose(active.tokenId);
         await maybeStopMonitor();
         sendDiscordMessage(
           webhookUrl,
@@ -381,7 +428,12 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           slippageToleranceBps: rebalanceConfig.slippageBps,
           targetTotalToken1: rebalanceConfig.targetTotalToken1,
         },
-        'auto'
+        'auto',
+        {
+          onAfterClose: async () => {
+            await handlePerpCloseStrict(active.tokenId);
+          },
+        }
       );
       if (active) {
         const details: CloseDetails = {
@@ -393,11 +445,13 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await finalizePerpClose(active.tokenId);
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
       await insertPosition(db, toPositionRecord(result, rebalanceConfig));
       await startMonitorFor(result.tokenId, result.netValueIn1);
+      await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
       sendDiscordMessage(
         webhookUrl,
         buildRebalanceSummary({
@@ -455,7 +509,12 @@ const apiActions = {
           slippageToleranceBps: rebalanceConfig.slippageBps,
           targetTotalToken1: rebalanceConfig.targetTotalToken1,
         },
-        'manual'
+        'manual',
+        {
+          onAfterClose: async () => {
+            await handlePerpCloseStrict(active.tokenId);
+          },
+        }
       );
       if (active) {
         const details: CloseDetails = {
@@ -467,11 +526,13 @@ const apiActions = {
           closedAt: new Date().toISOString(),
         };
         await closePositionWithDetails(db, active.tokenId, details);
+        await finalizePerpClose(active.tokenId);
       } else {
         await closeLatestActivePosition(db, result.closeTxHash);
       }
       await insertPosition(db, toPositionRecord(result, rebalanceConfig));
       await startMonitorFor(result.tokenId, result.netValueIn1);
+      await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
       sendDiscordMessage(
         webhookUrl,
         buildRebalanceSummary({
@@ -532,6 +593,8 @@ const apiActions = {
         closedAt: new Date().toISOString(),
       };
       await closePositionWithDetails(db, active.tokenId, details);
+      await handlePerpClose(active.tokenId);
+      await finalizePerpClose(active.tokenId);
       await maybeStopMonitor();
       sendDiscordMessage(
         webhookUrl,
@@ -582,6 +645,7 @@ const apiActions = {
       );
       await insertPosition(db, toPositionRecord(result));
       await startMonitorFor(result.tokenId, result.netValueIn1);
+      await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
       sendDiscordMessage(webhookUrl, 'Manual mint done.', 'success');
     } catch (error) {
       console.error('Manual mint error:', error);
@@ -644,6 +708,9 @@ async function maybeStopMonitor(): Promise<void> {
 async function bootstrap(): Promise<void> {
   await awaitDbReady();
   startApiServer(port, apiActions);
+  if (process.env.PERP_WS_ENABLED !== 'false') {
+    startPerpAccountStream();
+  }
   await maybeStartMonitor();
 }
 
