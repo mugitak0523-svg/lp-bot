@@ -1388,7 +1388,18 @@ async function loadHistory() {
   historyBodyEl.innerHTML = closed
     .map((row) => {
       const tokenId = row.tokenId ?? '-';
-      const range = row.tickLower != null && row.tickUpper != null ? `tick ${row.tickLower} ~ ${row.tickUpper}` : '-';
+      let range = '-';
+      if (row.tickLower != null && row.tickUpper != null) {
+        const lower = Number(row.tickLower);
+        const upper = Number(row.tickUpper);
+        if (Number.isFinite(lower) && Number.isFinite(upper)) {
+          const diff = Math.abs(upper - lower);
+          const half = Math.round(diff / 2);
+          range = `${lower} ~ ${upper} (±${half})`;
+        } else {
+          range = `${row.tickLower} ~ ${row.tickUpper}`;
+        }
+      }
       const size = row.netValueIn1 != null ? `${formatNumber(row.netValueIn1, 4)} ${row.token1Symbol}` : '-';
       const closedNet =
         row.closedNetValueIn1 != null ? `${formatNumber(row.closedNetValueIn1, 4)} ${row.token1Symbol}` : '-';
