@@ -117,8 +117,17 @@
               <p class="stat-sub" id="cost-detail">-</p>
             </article>
 
-            <article class="card empty-card" id="card-empty-2">
-              <p class="stat-sub">-</p>
+            <article class="card" id="card-pnl-composite">
+              <div class="card-header">
+                <h2 class="card-title">LP + PERP PnL</h2>
+              </div>
+              <canvas id="pnl-composite-chart" class="pnl-chart" height="120"></canvas>
+              <div class="pnl-legend">
+                <span class="pnl-dot lp">LP</span>
+                <span class="pnl-dot perp">PERP</span>
+                <span class="pnl-dot total">Total</span>
+              </div>
+              <p class="stat-sub" id="pnl-composite-detail">-</p>
             </article>
           </div>
 

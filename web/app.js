@@ -38,6 +38,8 @@ const profitRatioCost = document.getElementById('profit-ratio-cost');
 const profitRatioText = document.getElementById('profit-ratio-text');
 const profitRatioPositiveBar = document.getElementById('profit-ratio-positive');
 const profitRatioNegativeBar = document.getElementById('profit-ratio-negative');
+const pnlCompositeChartEl = document.getElementById('pnl-composite-chart');
+const pnlCompositeDetailEl = document.getElementById('pnl-composite-detail');
 const ratioFill0 = document.getElementById('ratio-fill');
 const ratioFill1 = document.getElementById('ratio-fill-1');
 const ratioText = document.getElementById('ratio-text');
@@ -175,6 +177,264 @@ let perpAskUpdatedAt = null;
 let perpPricePnlIn1 = null;
 let perpFeeIn1 = null;
 let perpQuoteSymbol = 'USDC';
+let activeTickLower = null;
+let activeTickUpper = null;
+let activeToken0Decimals = null;
+let activeToken1Decimals = null;
+let perpNetSize = null;
+let perpAvgEntry = null;
+
+function resetCompositeChart() {
+  if (pnlCompositeDetailEl) pnlCompositeDetailEl.textContent = '-';
+  renderCompositeChart([], [], [], null);
+}
+
+function computeLiquidityFromAmounts(params) {
+  const { amount0, amount1, price, priceLower, priceUpper } = params;
+  if (!Number.isFinite(price) || price <= 0) return null;
+  if (!Number.isFinite(priceLower) || !Number.isFinite(priceUpper)) return null;
+  const minPrice = Math.min(priceLower, priceUpper);
+  const maxPrice = Math.max(priceLower, priceUpper);
+  const sqrtPa = Math.sqrt(minPrice);
+  const sqrtPb = Math.sqrt(maxPrice);
+  const sqrtP = Math.sqrt(price);
+  if (!(sqrtPa > 0 && sqrtPb > 0 && sqrtP > 0)) return null;
+  if (price <= minPrice) {
+    if (!Number.isFinite(amount0) || amount0 <= 0) return null;
+    const denom = (sqrtPb - sqrtPa) / (sqrtPa * sqrtPb);
+    return denom !== 0 ? amount0 / denom : null;
+  }
+  if (price >= maxPrice) {
+    if (!Number.isFinite(amount1) || amount1 <= 0) return null;
+    const denom = sqrtPb - sqrtPa;
+    return denom !== 0 ? amount1 / denom : null;
+  }
+  const l0Denom = (sqrtPb - sqrtP) / (sqrtP * sqrtPb);
+  const l1Denom = sqrtP - sqrtPa;
+  const l0 = Number.isFinite(amount0) && amount0 > 0 && l0Denom !== 0 ? amount0 / l0Denom : null;
+  const l1 = Number.isFinite(amount1) && amount1 > 0 && l1Denom !== 0 ? amount1 / l1Denom : null;
+  if (l0 != null && l1 != null) {
+    return (l0 + l1) / 2;
+  }
+  return l0 ?? l1 ?? null;
+}
+
+function computeLpValueAtPrice(price, liquidity, priceLower, priceUpper) {
+  const minPrice = Math.min(priceLower, priceUpper);
+  const maxPrice = Math.max(priceLower, priceUpper);
+  const sqrtPa = Math.sqrt(minPrice);
+  const sqrtPb = Math.sqrt(maxPrice);
+  const sqrtP = Math.sqrt(price);
+  if (!(sqrtPa > 0 && sqrtPb > 0 && sqrtP > 0)) return null;
+  let amount0 = 0;
+  let amount1 = 0;
+  if (price <= minPrice) {
+    amount0 = liquidity * (sqrtPb - sqrtPa) / (sqrtPa * sqrtPb);
+  } else if (price >= maxPrice) {
+    amount1 = liquidity * (sqrtPb - sqrtPa);
+  } else {
+    amount0 = liquidity * (sqrtPb - sqrtP) / (sqrtP * sqrtPb);
+    amount1 = liquidity * (sqrtP - sqrtPa);
+  }
+  return amount0 * price + amount1;
+}
+
+function computePerpPnlAtPrice(price) {
+  if (!Number.isFinite(price) || !Number.isFinite(perpNetSize) || !Number.isFinite(perpAvgEntry)) {
+    return 0;
+  }
+  if (perpNetSize === 0) return 0;
+  const absSize = Math.abs(perpNetSize);
+  const delta = price - perpAvgEntry;
+  return perpNetSize > 0 ? delta * absSize : -delta * absSize;
+}
+
+function renderCompositeChart(prices, lpPnls, perpPnls, entryPrice, currentPrice, rangeLower, rangeUpper) {
+  if (!pnlCompositeChartEl) return;
+  const ctx = pnlCompositeChartEl.getContext('2d');
+  if (!ctx) return;
+  const width = pnlCompositeChartEl.clientWidth || 1;
+  const height = pnlCompositeChartEl.clientHeight || pnlCompositeChartEl.height || 1;
+  const dpr = window.devicePixelRatio || 1;
+  pnlCompositeChartEl.width = Math.floor(width * dpr);
+  pnlCompositeChartEl.height = Math.floor(height * dpr);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, width, height);
+  if (!prices.length) {
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '12px ui-sans-serif, system-ui, -apple-system';
+    ctx.fillText('-', 6, 14);
+    return;
+  }
+  const totals = lpPnls.map((value, idx) => value + (perpPnls[idx] ?? 0));
+  const values = [...lpPnls, ...perpPnls, ...totals, 0];
+  const minValue = Math.min(...values);
+  const maxValue = Math.max(...values);
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const paddingX = 8;
+  const paddingY = 8;
+  const plotWidth = width - paddingX * 2;
+  const plotHeight = height - paddingY * 2;
+  const valueRange = maxValue - minValue || 1;
+  const priceRange = maxPrice - minPrice || 1;
+  const toY = (value) => paddingY + ((maxValue - value) / valueRange) * plotHeight;
+  const toX = (price) => paddingX + ((price - minPrice) / priceRange) * plotWidth;
+
+  const drawYAxisLabel = (value, y) => {
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px ui-sans-serif, system-ui, -apple-system';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(formatNumber(value, 2), paddingX, y);
+  };
+
+  if (Number.isFinite(rangeLower) && Number.isFinite(rangeUpper)) {
+    const rangeMin = Math.min(rangeLower, rangeUpper);
+    const rangeMax = Math.max(rangeLower, rangeUpper);
+    const xStart = toX(rangeMin);
+    const xEnd = toX(rangeMax);
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.08)';
+    ctx.fillRect(xStart, paddingY, xEnd - xStart, plotHeight);
+  }
+
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)';
+  ctx.lineWidth = 1;
+  const zeroY = toY(0);
+  ctx.beginPath();
+  ctx.moveTo(paddingX, zeroY);
+  ctx.lineTo(width - paddingX, zeroY);
+  ctx.stroke();
+
+  drawYAxisLabel(maxValue, paddingY);
+  drawYAxisLabel(0, zeroY);
+  drawYAxisLabel(minValue, height - paddingY);
+
+  if (Number.isFinite(entryPrice)) {
+    const entryX = toX(entryPrice);
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.2)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(entryX, paddingY);
+    ctx.lineTo(entryX, height - paddingY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  const drawLine = (series, color, widthPx) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = widthPx;
+    ctx.beginPath();
+    series.forEach((value, index) => {
+      const x = toX(prices[index]);
+      const y = toY(value);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  };
+
+  drawLine(lpPnls, '#22c55e', 1.2);
+  drawLine(perpPnls, '#3b82f6', 1.2);
+  drawLine(totals, '#0f172a', 2);
+
+  if (Number.isFinite(rangeLower) && Number.isFinite(rangeUpper)) {
+    const rangeMin = Math.min(rangeLower, rangeUpper);
+    const rangeMax = Math.max(rangeLower, rangeUpper);
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(toX(rangeMin), paddingY);
+    ctx.lineTo(toX(rangeMin), height - paddingY);
+    ctx.moveTo(toX(rangeMax), paddingY);
+    ctx.lineTo(toX(rangeMax), height - paddingY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  if (Number.isFinite(currentPrice)) {
+    const currentX = toX(currentPrice);
+    ctx.strokeStyle = 'rgba(37, 99, 235, 0.4)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(currentX, paddingY);
+    ctx.lineTo(currentX, height - paddingY);
+    ctx.stroke();
+    const closestIndex = prices.reduce((bestIdx, price, idx) => {
+      if (bestIdx === 0) return 0;
+      const bestDiff = Math.abs(prices[bestIdx] - currentPrice);
+      const diff = Math.abs(price - currentPrice);
+      return diff < bestDiff ? idx : bestIdx;
+    }, 0);
+    const currentTotal = totals[closestIndex] ?? 0;
+    const currentY = toY(currentTotal);
+    ctx.fillStyle = '#2563eb';
+    ctx.beginPath();
+    ctx.arc(currentX, currentY, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function updateCompositeChart() {
+  if (!Number.isFinite(activeEntryPrice)) {
+    resetCompositeChart();
+    return;
+  }
+  const priceLower = activeRangePriceLow;
+  const priceUpper = activeRangePriceHigh;
+  if (!Number.isFinite(priceLower) || !Number.isFinite(priceUpper)) {
+    resetCompositeChart();
+    return;
+  }
+  const currentPrice = lastPrice0In1;
+  const amount0 = lastAmount0;
+  const amount1 = lastAmount1;
+  const baseValue = activeSizeIn1;
+  if (!Number.isFinite(currentPrice) || !Number.isFinite(baseValue)) {
+    resetCompositeChart();
+    return;
+  }
+  const liquidity = computeLiquidityFromAmounts({
+    amount0,
+    amount1,
+    price: currentPrice,
+    priceLower,
+    priceUpper,
+  });
+  if (!Number.isFinite(liquidity)) {
+    resetCompositeChart();
+    return;
+  }
+  const entry = activeEntryPrice;
+  const range = Math.max(0, priceUpper - priceLower);
+  const margin = range * 0.1;
+  const minPrice = Math.max(priceLower - margin, 0.01);
+  const maxPrice = priceUpper + margin;
+  const points = 41;
+  const prices = [];
+  const lpPnls = [];
+  const perpPnls = [];
+  for (let i = 0; i < points; i += 1) {
+    const price = minPrice + (maxPrice - minPrice) * (i / (points - 1));
+    const lpValue = computeLpValueAtPrice(price, liquidity, priceLower, priceUpper);
+    if (!Number.isFinite(lpValue)) continue;
+    const lpPnl = lpValue - baseValue;
+    prices.push(price);
+    lpPnls.push(lpPnl);
+    perpPnls.push(computePerpPnlAtPrice(price));
+  }
+  renderCompositeChart(prices, lpPnls, perpPnls, entry, currentPrice, priceLower, priceUpper);
+  if (pnlCompositeDetailEl) {
+    const currentLabel = Number.isFinite(currentPrice) ? formatNumber(currentPrice, 2) : '-';
+    pnlCompositeDetailEl.textContent =
+      `Entry ${formatNumber(entry, 2)} / Now ${currentLabel} / Range ${formatNumber(minPrice, 2)} ~ ${formatNumber(
+        maxPrice,
+        2
+      )}`;
+  }
+}
 
 function resetPerpCard() {
   if (perpStatusEl) {
@@ -432,6 +692,49 @@ function computeNetPosition(trades) {
     }
   });
   return { position, avgEntry };
+}
+
+function extractActivePerpPosition(snapshot) {
+  const positions = Array.isArray(snapshot?.positions) ? snapshot.positions : [];
+  let best = null;
+  positions.forEach((row) => {
+    if (!row || typeof row !== 'object') return;
+    const market = row.market ?? row.symbol ?? row.pair ?? row.instrument;
+    const rawSize =
+      row.size ??
+      row.position_size ??
+      row.positionSize ??
+      row.net_size ??
+      row.netSize ??
+      row.qty ??
+      row.quantity ??
+      row.amount;
+    const rawEntry =
+      row.entry_price ??
+      row.entryPrice ??
+      row.avg_entry_price ??
+      row.avgEntryPrice ??
+      row.average_price ??
+      row.avgPrice ??
+      row.price;
+    const side = row.side ?? row.position_side ?? row.positionSide;
+    let size = Number(rawSize);
+    const avgEntry = Number(rawEntry);
+    if (!Number.isFinite(size)) return;
+    if (Number.isFinite(size) && size !== 0 && typeof side === 'string') {
+      if (side.toUpperCase().includes('SHORT')) size = -Math.abs(size);
+      if (side.toUpperCase().includes('LONG')) size = Math.abs(size);
+    }
+    const candidate = {
+      size,
+      avgEntry: Number.isFinite(avgEntry) ? avgEntry : null,
+      market: typeof market === 'string' ? market : null,
+    };
+    if (!best || Math.abs(candidate.size) > Math.abs(best.size)) {
+      best = candidate;
+    }
+  });
+  return best;
 }
 
 function formatUsd(value) {
@@ -857,6 +1160,7 @@ async function loadStatus() {
     if (profitRatioNegativeBar) profitRatioNegativeBar.style.width = '0%';
     if (profitRatioText) profitRatioText.textContent = '-';
     profitTotalEl.classList.remove('profit-positive', 'profit-negative');
+    resetCompositeChart();
     await refreshPoolPriceForRange();
     return;
   }
@@ -997,6 +1301,7 @@ async function loadStatus() {
   profitDetailEl.textContent =
     `LP ${formatNumber(pnlValue, 2)} + Fees ${formatNumber(feeValue, 2)} ` +
     `+ PERP ${perpPnlLabel} - Cost ${costLabel}`;
+  updateCompositeChart();
 
   const lpPnlPos = Math.max(pnlValue, 0);
   const lpPnlNeg = Math.max(-pnlValue, 0);
@@ -1623,6 +1928,7 @@ async function loadActivePosition() {
     createBtn.disabled = false;
     setConfigFormDisabled(false);
     createHint.textContent = '';
+    resetCompositeChart();
     return;
   }
   if (data.tokenId && data.tokenId !== lastActiveTokenId) {
@@ -1647,10 +1953,18 @@ async function loadActivePosition() {
     activeRangePriceEl.textContent = `${formatActiveValue(minPrice)} ~ ${formatActiveValue(maxPrice)} ${data.token1Symbol} (${formatActiveValue(priceDiff)} ${data.token1Symbol})`;
     activeRangePriceLow = minPrice;
     activeRangePriceHigh = maxPrice;
+    activeTickLower = tickLower;
+    activeTickUpper = tickUpper;
+    activeToken0Decimals = dec0;
+    activeToken1Decimals = dec1;
   } else {
     activeRangePriceEl.textContent = '-';
     activeRangePriceLow = null;
     activeRangePriceHigh = null;
+    activeTickLower = null;
+    activeTickUpper = null;
+    activeToken0Decimals = null;
+    activeToken1Decimals = null;
   }
   const createdSize = Number(data.netValueIn1);
   activeSizeIn1 = Number.isFinite(createdSize) && createdSize > 0 ? createdSize : null;
@@ -1720,6 +2034,7 @@ async function loadActivePosition() {
     holdTimeEl.textContent = '-';
     createdAtEl.textContent = '-';
   }
+  updateCompositeChart();
   const isActive = data.status === 'active';
   createBtn.disabled = isActive;
   setConfigFormDisabled(isActive);
@@ -1730,24 +2045,50 @@ async function loadPerpPositionSize() {
   if (!perpSizeEl) return;
   if (!lastActiveTokenId) {
     resetPerpCard();
+    perpNetSize = null;
+    perpAvgEntry = null;
+    updateCompositeChart();
     return;
   }
   try {
+    let activePosition = null;
+    try {
+      const snapshot = await fetchJson('/perp/positions');
+      activePosition = extractActivePerpPosition(snapshot);
+    } catch (error) {
+      console.warn('PERP positions fetch error:', error);
+    }
+
     const rows = await fetchJson(`/perp/trades?token_id=${encodeURIComponent(lastActiveTokenId)}&limit=200`);
-    if (!Array.isArray(rows) || rows.length === 0) {
+    const hasTrades = Array.isArray(rows) && rows.length > 0;
+    if (!activePosition && !hasTrades) {
       resetPerpCard();
       if (perpStatusEl) {
         perpStatusEl.textContent = 'no-data';
       }
+      perpNetSize = null;
+      perpAvgEntry = null;
+      updateCompositeChart();
       return;
     }
-    const market = rows[0]?.market ?? '-';
+    const market = activePosition?.market ?? (hasTrades ? rows[0]?.market : '-') ?? '-';
     const baseSymbol = typeof market === 'string' && market.includes('-') ? market.split('-')[0] : 'BASE';
     const rawQuote = typeof market === 'string' && market.includes('-') ? market.split('-')[1] : 'QUOTE';
     const quoteSymbol = rawQuote === 'USD' ? 'USDC' : rawQuote;
     perpQuoteSymbol = quoteSymbol;
     const latestTime = perpAskUpdatedAt ? new Date(perpAskUpdatedAt).toLocaleString() : '-';
-    const { position, avgEntry } = computeNetPosition(rows);
+    let position = 0;
+    let avgEntry = 0;
+    if (activePosition && Number.isFinite(activePosition.size)) {
+      position = activePosition.size;
+      avgEntry = Number(activePosition.avgEntry) || 0;
+    } else if (hasTrades) {
+      const computed = computeNetPosition(rows);
+      position = computed.position;
+      avgEntry = computed.avgEntry;
+    }
+    perpNetSize = position;
+    perpAvgEntry = avgEntry;
     let status = 'flat';
     let size = 0;
     if (position < 0) {
@@ -1778,11 +2119,13 @@ async function loadPerpPositionSize() {
       }
       const lpGas = Number(activeGasIn1 ?? 0);
       const lpSwapFee = Number(activeSwapFeeIn1 ?? 0);
-      const shortFees = rows.reduce((sum, row) => {
-        const fee = Number(row.fee);
-        if (!Number.isFinite(fee)) return sum;
-        return row.side === 'SELL' ? sum + fee : sum;
-      }, 0);
+      const shortFees = hasTrades
+        ? rows.reduce((sum, row) => {
+            const fee = Number(row.fee);
+            if (!Number.isFinite(fee)) return sum;
+            return row.side === 'SELL' ? sum + fee : sum;
+          }, 0)
+        : 0;
       const perpHoldingFee = notional * 0.00025;
       const perpFeeTotal = shortFees + perpHoldingFee;
       perpPricePnlIn1 = pnl;
@@ -1826,8 +2169,12 @@ async function loadPerpPositionSize() {
       if (costBarPerpEl) costBarPerpEl.style.width = '0%';
     }
     if (perpUpdatedEl) perpUpdatedEl.textContent = `Updated ${latestTime}`;
+    updateCompositeChart();
   } catch (error) {
     console.error(error);
+    perpNetSize = null;
+    perpAvgEntry = null;
+    updateCompositeChart();
   }
 }
 
