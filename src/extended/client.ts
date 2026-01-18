@@ -1,4 +1,5 @@
 import { spawn } from 'child_process';
+import { existsSync } from 'fs';
 import path from 'path';
 
 export type ExtendedCliResult =
@@ -7,7 +8,8 @@ export type ExtendedCliResult =
 
 const projectRoot = process.cwd();
 const extendedCliPath = path.resolve(projectRoot, 'src', 'extended', 'cli.py');
-const pythonBin = process.env.EXTENDED_PYTHON_BIN ?? 'python3';
+const venvPython = path.resolve(projectRoot, '.venv', 'bin', 'python');
+const pythonBin = process.env.EXTENDED_PYTHON_BIN ?? (existsSync(venvPython) ? venvPython : 'python3');
 
 export function runExtendedCli(command: string, payload: Record<string, unknown>): Promise<ExtendedCliResult> {
   return new Promise((resolve, reject) => {
