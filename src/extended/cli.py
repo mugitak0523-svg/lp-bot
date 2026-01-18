@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import HTTPException
 from x10.perpetual.orders import OrderSide
 from x10.perpetual.trades import TradeType
 
@@ -120,12 +119,15 @@ async def run() -> None:
                 result = {"ok": True, "data": {"market": market, "stats": stats_dump}}
         else:
             result = {"ok": False, "status_code": 400, "error": f"unknown command: {command}"}
-    except HTTPException as exc:
-        result = {"ok": False, "status_code": exc.status_code, "error": str(exc.detail)}
     except ValueError as exc:
         result = {"ok": False, "status_code": 400, "error": str(exc)}
     except Exception as exc:
-        result = {"ok": False, "status_code": 500, "error": str(exc)}
+        status_code = getattr(exc, "status_code", None)
+        detail = getattr(exc, "detail", None)
+        if isinstance(status_code, int):
+            result = {"ok": False, "status_code": status_code, "error": str(detail or exc)}
+        else:
+            result = {"ok": False, "status_code": 500, "error": str(exc)}
     finally:
         await trading_client.close()
     safe_result = stringify_large_ints(result)

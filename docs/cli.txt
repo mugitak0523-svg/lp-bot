@@ -17,3 +17,7 @@ curl -X POST http://localhost:3000/positions/delete \
   curl "http://localhost:3000/orders/2011809447261200400"
 
 curl "http://localhost:3000/trades?market=ETH-USD&limit=10"
+
+curl "http://localhost:3000/perp/trades?limit=20"
+curl "http://localhost:3000/perp/trades?token_id=5223750"
+curl "http://localhost:3000/perp/trades?token_id=5223750&market=ETH-USD&limit=50"
