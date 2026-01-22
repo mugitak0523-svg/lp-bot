@@ -126,6 +126,7 @@ const rebalanceBtn = document.getElementById('btn-rebalance');
 const closeBtn = document.getElementById('btn-close');
 const createBtn = document.getElementById('btn-create');
 const stopAutoCloseBtn = document.getElementById('btn-stop-auto-close');
+const perpHedgeBtn = document.getElementById('btn-perp-hedge');
 const createHint = document.getElementById('create-hint');
 const navItems = document.querySelectorAll('.nav-item');
 
@@ -162,6 +163,7 @@ let lastPositionUsd = null;
 let lastRebalanceRemainingLabel = null;
 let lastRebalanceTotalLabel = null;
 let stopAfterAutoCloseValue = false;
+let perpHedgeOnMintValue = true;
 let poolPriceCache = null;
 let lastPoolPriceFetchMs = 0;
 let lastLogId = null;
@@ -1367,9 +1369,15 @@ async function loadConfig() {
     typeof config.rebalanceDelaySec === 'number' ? config.rebalanceDelaySec : rebalanceDelaySecValue;
   stopAfterAutoCloseValue =
     typeof config.stopAfterAutoClose === 'boolean' ? config.stopAfterAutoClose : stopAfterAutoCloseValue;
+  perpHedgeOnMintValue =
+    typeof config.perpHedgeOnMint === 'boolean' ? config.perpHedgeOnMint : perpHedgeOnMintValue;
   if (stopAutoCloseBtn) {
     stopAutoCloseBtn.classList.toggle('active', stopAfterAutoCloseValue);
     stopAutoCloseBtn.textContent = stopAfterAutoCloseValue ? 'Auto Close Only (ON)' : 'Auto Close Only (OFF)';
+  }
+  if (perpHedgeBtn) {
+    perpHedgeBtn.classList.toggle('active', perpHedgeOnMintValue);
+    perpHedgeBtn.textContent = perpHedgeOnMintValue ? 'Perp Hedge on Create (ON)' : 'Perp Hedge on Create (OFF)';
   }
   applyConfigToForm(config);
 }
@@ -2007,6 +2015,13 @@ async function loadActivePosition() {
       stopAutoCloseBtn.textContent = stopAfterAutoCloseValue ? 'Auto Close Only (ON)' : 'Auto Close Only (OFF)';
     }
   }
+  if (data.configPerpHedgeOnMint != null) {
+    perpHedgeOnMintValue = Boolean(data.configPerpHedgeOnMint);
+    if (perpHedgeBtn) {
+      perpHedgeBtn.classList.toggle('active', perpHedgeOnMintValue);
+      perpHedgeBtn.textContent = perpHedgeOnMintValue ? 'Perp Hedge on Create (ON)' : 'Perp Hedge on Create (OFF)';
+    }
+  }
   if (stopLossPercentValue == null) {
     const stopLossField = configForm.elements.namedItem('stopLossPercent');
     const stopLossInput = stopLossField ? Number(stopLossField.value) : NaN;
@@ -2049,6 +2064,7 @@ async function loadActivePosition() {
   const isActive = data.status === 'active';
   createBtn.disabled = isActive;
   setConfigFormDisabled(isActive);
+  if (perpHedgeBtn) perpHedgeBtn.disabled = isActive;
   createHint.textContent = isActive ? 'Activeポジションがあるため作成できません' : '';
 }
 
@@ -2265,6 +2281,18 @@ if (stopAutoCloseBtn) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ stopAfterAutoClose: stopAfterAutoCloseValue }),
+    });
+    await loadConfig();
+  });
+}
+
+if (perpHedgeBtn) {
+  perpHedgeBtn.addEventListener('click', async () => {
+    perpHedgeOnMintValue = !perpHedgeOnMintValue;
+    await fetchJson('/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ perpHedgeOnMint: perpHedgeOnMintValue }),
     });
     await loadConfig();
   });

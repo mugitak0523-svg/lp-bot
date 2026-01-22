@@ -277,6 +277,11 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
   app.post('/config', async (req, res) => {
     const body = req.body ?? {};
     const updates: Record<string, unknown> = {};
+    const active = await getLatestActivePosition(db);
+    if (active && typeof body.perpHedgeOnMint === 'boolean') {
+      res.status(409).json({ error: 'perp hedge setting locked while active position exists' });
+      return;
+    }
     if (typeof body.tickRange === 'number') updates.tickRange = body.tickRange;
     if (typeof body.rebalanceDelaySec === 'number') updates.rebalanceDelaySec = body.rebalanceDelaySec;
     if (typeof body.slippageBps === 'number') updates.slippageBps = body.slippageBps;
@@ -284,8 +289,8 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
     if (typeof body.maxGasPriceGwei === 'number') updates.maxGasPriceGwei = body.maxGasPriceGwei;
     if (typeof body.targetTotalToken1 === 'number') updates.targetTotalToken1 = body.targetTotalToken1;
     if (typeof body.stopAfterAutoClose === 'boolean') updates.stopAfterAutoClose = body.stopAfterAutoClose;
+    if (typeof body.perpHedgeOnMint === 'boolean') updates.perpHedgeOnMint = body.perpHedgeOnMint;
     const next = updateConfig(updates);
-    const active = await getLatestActivePosition(db);
     if (active) {
       await updateActivePositionConfig(db, active.tokenId, {
         configTickRange: next.tickRange,
@@ -295,6 +300,7 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
         configMaxGasPriceGwei: next.maxGasPriceGwei,
         configTargetTotalToken1: next.targetTotalToken1,
         configStopAfterAutoClose: next.stopAfterAutoClose ? 1 : 0,
+        configPerpHedgeOnMint: next.perpHedgeOnMint ? 1 : 0,
       });
     }
     res.json(next);

@@ -204,6 +204,8 @@ function resolveActiveConfig(active: Awaited<ReturnType<typeof getLatestActivePo
     targetTotalToken1: active?.configTargetTotalToken1 ?? fallback.targetTotalToken1,
     stopAfterAutoClose:
       active?.configStopAfterAutoClose != null ? Boolean(active.configStopAfterAutoClose) : fallback.stopAfterAutoClose,
+    perpHedgeOnMint:
+      active?.configPerpHedgeOnMint != null ? Boolean(active.configPerpHedgeOnMint) : fallback.perpHedgeOnMint,
   };
 }
 
@@ -239,6 +241,7 @@ function toPositionRecord(result: RebalanceResult, configOverride?: ReturnType<t
     configMaxGasPriceGwei: config.maxGasPriceGwei,
     configTargetTotalToken1: config.targetTotalToken1,
     configStopAfterAutoClose: config.stopAfterAutoClose ? 1 : 0,
+    configPerpHedgeOnMint: config.perpHedgeOnMint ? 1 : 0,
     rebalanceReason: result.reason,
     mintTxHash: result.mintTxHash,
     closeTxHash: undefined,
@@ -451,7 +454,7 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       }
       await insertPosition(db, toPositionRecord(result, rebalanceConfig));
       await startMonitorFor(result.tokenId, result.netValueIn1);
-      await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
+      await maybeOpenPerpHedge(rebalanceConfig, result);
       sendDiscordMessage(
         webhookUrl,
         buildRebalanceSummary({
@@ -483,6 +486,17 @@ async function handleSnapshot(snapshot: MonitorSnapshot) {
       state.outOfRangeSince = 0;
     }
   }
+}
+
+async function maybeOpenPerpHedge(
+  config: ReturnType<typeof resolveActiveConfig>,
+  result: RebalanceResult
+): Promise<void> {
+  if (!config.perpHedgeOnMint) {
+    console.log('Perp hedge skipped for new position.');
+    return;
+  }
+  await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
 }
 
 const apiActions = {
@@ -532,7 +546,7 @@ const apiActions = {
       }
       await insertPosition(db, toPositionRecord(result, rebalanceConfig));
       await startMonitorFor(result.tokenId, result.netValueIn1);
-      await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
+      await maybeOpenPerpHedge(rebalanceConfig, result);
       sendDiscordMessage(
         webhookUrl,
         buildRebalanceSummary({
@@ -635,17 +649,18 @@ const apiActions = {
     state.rebalancing = true;
     sendDiscordMessage(webhookUrl, 'Manual mint start.', 'warn');
     try {
+      const config = getConfig();
       const result = await mintNewPosition(
         {
-          tickRange: getConfig().tickRange,
-          slippageToleranceBps: getConfig().slippageBps,
-          targetTotalToken1: getConfig().targetTotalToken1,
+          tickRange: config.tickRange,
+          slippageToleranceBps: config.slippageBps,
+          targetTotalToken1: config.targetTotalToken1,
         },
         'manual_create'
       );
-      await insertPosition(db, toPositionRecord(result));
+      await insertPosition(db, toPositionRecord(result, config));
       await startMonitorFor(result.tokenId, result.netValueIn1);
-      await handlePerpOpen(result.tokenId, result.amount0, result.token0Decimals);
+      await maybeOpenPerpHedge(config, result);
       sendDiscordMessage(webhookUrl, 'Manual mint done.', 'success');
     } catch (error) {
       console.error('Manual mint error:', error);

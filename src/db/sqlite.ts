@@ -51,6 +51,7 @@ export function initDb(filePath: string): SqliteDb {
         config_max_gas_price_gwei REAL,
         config_target_total_token1 REAL,
         config_stop_after_auto_close INTEGER,
+        config_perp_hedge_on_mint INTEGER,
         rebalance_reason TEXT,
         mint_tx_hash TEXT,
         close_tx_hash TEXT,
@@ -108,6 +109,7 @@ export function initDb(filePath: string): SqliteDb {
           ensureColumn(db, 'positions', 'config_max_gas_price_gwei', 'REAL'),
           ensureColumn(db, 'positions', 'config_target_total_token1', 'REAL'),
           ensureColumn(db, 'positions', 'config_stop_after_auto_close', 'INTEGER'),
+          ensureColumn(db, 'positions', 'config_perp_hedge_on_mint', 'INTEGER'),
         ])
           .then(() => resolve())
           .catch(reject);
