@@ -6,6 +6,7 @@ export type RuntimeConfig = {
   maxGasPriceGwei: number;
   targetTotalToken1: number;
   stopAfterAutoClose: boolean;
+  perpHedgeOnMint: boolean;
 };
 
 function parseNumber(value: string | undefined, fallback: number): number {
@@ -31,5 +32,6 @@ export function loadRuntimeConfig(): RuntimeConfig {
     maxGasPriceGwei: parseNumber(process.env.MAX_GAS_PRICE_GWEI, 50),
     targetTotalToken1: parseNumber(process.env.TARGET_TOTAL_TOKEN1, 0),
     stopAfterAutoClose: parseBoolean(process.env.STOP_AFTER_AUTO_CLOSE, false),
+    perpHedgeOnMint: parseBoolean(process.env.PERP_HEDGE_ON_MINT, true),
   };
 }

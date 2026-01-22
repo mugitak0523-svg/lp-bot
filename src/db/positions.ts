@@ -31,6 +31,7 @@ export type PositionRecord = {
   configMaxGasPriceGwei?: number;
   configTargetTotalToken1?: number;
   configStopAfterAutoClose?: number;
+  configPerpHedgeOnMint?: number;
   rebalanceReason?: string;
   mintTxHash?: string;
   closeTxHash?: string;
@@ -58,11 +59,11 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       perp_realized_pnl_in_1, perp_realized_fee_in_1,
       config_tick_range, config_rebalance_delay_sec, config_slippage_bps,
       config_stop_loss_percent, config_max_gas_price_gwei, config_target_total_token1,
-      config_stop_after_auto_close,
+      config_stop_after_auto_close, config_perp_hedge_on_mint,
       rebalance_reason, mint_tx_hash, close_tx_hash, close_reason,
       closed_net_value_in_1, realized_fees_in_1, realized_pnl_in_1, closed_at,
       status, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       record.tokenId,
       record.poolAddress,
@@ -94,6 +95,7 @@ export async function insertPosition(db: SqliteDb, record: PositionRecord): Prom
       record.configMaxGasPriceGwei ?? null,
       record.configTargetTotalToken1 ?? null,
       record.configStopAfterAutoClose ?? null,
+      record.configPerpHedgeOnMint ?? null,
       record.rebalanceReason ?? null,
       record.mintTxHash ?? null,
       record.closeTxHash ?? null,
@@ -245,6 +247,7 @@ export async function listPositions(db: SqliteDb, limit = 50): Promise<PositionR
       config_max_gas_price_gwei AS configMaxGasPriceGwei,
       config_target_total_token1 AS configTargetTotalToken1,
       config_stop_after_auto_close AS configStopAfterAutoClose,
+      config_perp_hedge_on_mint AS configPerpHedgeOnMint,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -287,6 +290,7 @@ export async function getLatestPosition(db: SqliteDb): Promise<PositionRecord | 
       config_max_gas_price_gwei AS configMaxGasPriceGwei,
       config_target_total_token1 AS configTargetTotalToken1,
       config_stop_after_auto_close AS configStopAfterAutoClose,
+      config_perp_hedge_on_mint AS configPerpHedgeOnMint,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -328,6 +332,7 @@ export async function getLatestActivePosition(db: SqliteDb): Promise<PositionRec
       config_max_gas_price_gwei AS configMaxGasPriceGwei,
       config_target_total_token1 AS configTargetTotalToken1,
       config_stop_after_auto_close AS configStopAfterAutoClose,
+      config_perp_hedge_on_mint AS configPerpHedgeOnMint,
       rebalance_reason AS rebalanceReason,
       mint_tx_hash AS mintTxHash,
       close_tx_hash AS closeTxHash,
@@ -359,6 +364,7 @@ export type PositionConfigUpdate = {
   configMaxGasPriceGwei?: number | null;
   configTargetTotalToken1?: number | null;
   configStopAfterAutoClose?: number | null;
+  configPerpHedgeOnMint?: number | null;
 };
 
 export async function updateActivePositionConfig(
@@ -377,6 +383,7 @@ export async function updateActivePositionConfig(
          config_max_gas_price_gwei = ?,
          config_target_total_token1 = ?,
          config_stop_after_auto_close = ?,
+         config_perp_hedge_on_mint = ?,
          updated_at = ?
      WHERE id = (
        SELECT id FROM positions
@@ -392,6 +399,7 @@ export async function updateActivePositionConfig(
       config.configMaxGasPriceGwei ?? null,
       config.configTargetTotalToken1 ?? null,
       config.configStopAfterAutoClose ?? null,
+      config.configPerpHedgeOnMint ?? null,
       now,
       tokenId,
     ]
