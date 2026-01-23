@@ -489,6 +489,45 @@ function updateTickRangeHint() {
   tickRangeHintEl.textContent = `${formatNumber(lower, 1)} ~ ${formatNumber(upper, 1)} ${lastSymbol1} (${formatNumber(diff, 1)} ${lastSymbol1})`;
 }
 
+function computeStopLossInfo(params) {
+  const {
+    baseSize,
+    stopLossPercent,
+    amount0,
+    amount1,
+    price0In1,
+    symbol0,
+    symbol1,
+  } = params;
+  if (!Number.isFinite(stopLossPercent) || !Number.isFinite(baseSize)) return null;
+  const stopValue = baseSize * (1 - stopLossPercent / 100);
+  const diff = baseSize - stopValue;
+  let amount0ForCalc = amount0;
+  let amount1ForCalc = amount1;
+  if (!Number.isFinite(amount0ForCalc) || !Number.isFinite(amount1ForCalc)) {
+    if (Number.isFinite(price0In1) && price0In1 > 0 && Number.isFinite(baseSize)) {
+      const half = baseSize / 2;
+      amount1ForCalc = half;
+      amount0ForCalc = half / price0In1;
+    }
+  }
+  let stopPrice = null;
+  let priceLabel = '';
+  if (Number.isFinite(amount0ForCalc) && Number.isFinite(amount1ForCalc) && amount0ForCalc > 0) {
+    const priceStop = (stopValue - amount1ForCalc) / amount0ForCalc;
+    if (Number.isFinite(priceStop) && priceStop > 0) {
+      stopPrice = priceStop;
+      let priceDiffText = '';
+      if (Number.isFinite(price0In1)) {
+        const priceDiff = priceStop - price0In1;
+        priceDiffText = ` (${formatActiveValue(priceDiff)} ${symbol1})`;
+      }
+      priceLabel = `1 ${symbol0} = ${formatActiveValue(priceStop)} ${symbol1}${priceDiffText}`.trim();
+    }
+  }
+  return { stopValue, diff, stopPrice, priceLabel };
+}
+
 function updateStopLossPreview() {
   if (!stopLossPreviewEl || !configForm) return;
   const stopLossField = configForm.elements.namedItem('stopLossPercent');
@@ -497,36 +536,24 @@ function updateStopLossPreview() {
   const sizeInput = sizeField ? Number(sizeField.value) : NaN;
   const baseSize =
     activeSizeIn1 != null && Number.isFinite(activeSizeIn1) ? activeSizeIn1 : sizeInput;
-  if (!Number.isFinite(stopLossPercent) || !Number.isFinite(baseSize)) {
+  const symbol = activeSymbol1 ?? lastSymbol1 ?? '';
+  const info = computeStopLossInfo({
+    baseSize,
+    stopLossPercent,
+    amount0: lastAmount0,
+    amount1: lastAmount1,
+    price0In1: lastPrice0In1,
+    symbol0: lastSymbol0 ?? '',
+    symbol1: symbol,
+  });
+  if (!info) {
     stopLossPreviewEl.textContent = '-';
     return;
   }
-  const stopValue = baseSize * (1 - stopLossPercent / 100);
-  const diff = baseSize - stopValue;
-  const symbol = activeSymbol1 ?? lastSymbol1 ?? '';
-  let stopPriceText = '-';
-  let amount0ForCalc = lastAmount0;
-  let amount1ForCalc = lastAmount1;
-  if (!Number.isFinite(amount0ForCalc) || !Number.isFinite(amount1ForCalc)) {
-    if (Number.isFinite(lastPrice0In1) && lastPrice0In1 > 0 && Number.isFinite(baseSize)) {
-      const half = baseSize / 2;
-      amount1ForCalc = half;
-      amount0ForCalc = half / lastPrice0In1;
-    }
-  }
-  if (Number.isFinite(amount0ForCalc) && Number.isFinite(amount1ForCalc) && amount0ForCalc > 0) {
-    const priceStop = (stopValue - amount1ForCalc) / amount0ForCalc;
-    if (Number.isFinite(priceStop) && priceStop > 0) {
-      const token0 = lastSymbol0 ?? '';
-      let priceDiffText = '';
-      if (Number.isFinite(lastPrice0In1)) {
-        const priceDiff = priceStop - lastPrice0In1;
-        priceDiffText = ` (${formatActiveValue(priceDiff)} ${symbol})`;
-      }
-      stopPriceText = `1 ${token0} = ${formatActiveValue(priceStop)} ${symbol}${priceDiffText}`.trim();
-    }
-  }
-  stopLossPreviewEl.textContent = `${formatActiveValue(stopValue)} ${symbol} (${formatActiveValue(diff)} ${symbol}) / ${stopPriceText}`;
+  const priceLabel = info.priceLabel ? ` / ${info.priceLabel}` : '';
+  stopLossPreviewEl.textContent =
+    `${formatActiveValue(info.stopValue)} ${symbol} ` +
+    `(${formatActiveValue(info.diff)} ${symbol})${priceLabel}`;
 }
 
 async function refreshPoolPriceForRange() {
@@ -1687,9 +1714,20 @@ function renderPriceChart(points, meta) {
   const rangeLow = Number.isFinite(activeRangePriceLow) ? activeRangePriceLow : null;
   const rangeHigh = Number.isFinite(activeRangePriceHigh) ? activeRangePriceHigh : null;
   const entryPrice = Number.isFinite(activeEntryPrice) ? activeEntryPrice : null;
+  const stopLossInfo = computeStopLossInfo({
+    baseSize: activeSizeIn1,
+    stopLossPercent: stopLossPercentValue,
+    amount0: lastAmount0,
+    amount1: lastAmount1,
+    price0In1: lastPrice0In1,
+    symbol0: lastSymbol0 ?? '',
+    symbol1: lastSymbol1 ?? '',
+  });
+  const stopLossPrice = Number.isFinite(stopLossInfo?.stopPrice) ? stopLossInfo.stopPrice : null;
   const rangeLowData = rangeLow != null ? labels.map(() => rangeLow) : [];
   const rangeHighData = rangeHigh != null ? labels.map(() => rangeHigh) : [];
   const entryData = entryPrice != null ? labels.map(() => entryPrice) : [];
+  const stopLossData = stopLossPrice != null ? labels.map(() => stopLossPrice) : [];
 
   const inRangeLine = lastOutOfRange ? '#ef4444' : '#84cc16';
   const inRangeFill = lastOutOfRange ? 'rgba(239, 68, 68, 0.08)' : 'rgba(132, 204, 22, 0.08)';
@@ -1736,6 +1774,15 @@ function renderPriceChart(points, meta) {
             pointRadius: 0,
             borderDash: [2, 4],
           },
+          {
+            data: stopLossData,
+            borderColor: '#ef4444',
+            backgroundColor: 'transparent',
+            fill: false,
+            tension: 0,
+            pointRadius: 0,
+            borderDash: [4, 4],
+          },
         ],
       },
       options: {
@@ -1755,8 +1802,12 @@ function renderPriceChart(points, meta) {
                 const isCustom =
                   (Number.isFinite(customLines.low) && Math.abs(value - customLines.low) < 0.001) ||
                   (Number.isFinite(customLines.high) && Math.abs(value - customLines.high) < 0.001) ||
-                  (Number.isFinite(customLines.entry) && Math.abs(value - customLines.entry) < 0.001);
+                  (Number.isFinite(customLines.entry) && Math.abs(value - customLines.entry) < 0.001) ||
+                  (Number.isFinite(customLines.stopLoss) && Math.abs(value - customLines.stopLoss) < 0.001);
                 if (!isCustom) return '#94a3b8';
+                if (Number.isFinite(customLines.stopLoss) && Math.abs(value - customLines.stopLoss) < 0.001) {
+                  return '#ef4444';
+                }
                 return lastOutOfRange ? '#ef4444' : '#84cc16';
               },
               callback: (value) => formatNumber(value, 2),
@@ -1764,7 +1815,7 @@ function renderPriceChart(points, meta) {
             afterBuildTicks: (axis) => {
               const customLines = axis.chart?.options?.scales?.y?.customLines;
               if (!customLines) return;
-              const values = [customLines.low, customLines.high, customLines.entry].filter(
+              const values = [customLines.low, customLines.high, customLines.entry, customLines.stopLoss].filter(
                 (val) => Number.isFinite(val)
               );
               const existing = new Set(axis.ticks.map((tick) => tick.value));
@@ -1784,6 +1835,7 @@ function renderPriceChart(points, meta) {
       low: rangeLow,
       high: rangeHigh,
       entry: entryPrice,
+      stopLoss: stopLossPrice,
       tickRange: lastTickRangeValue,
     };
   } else {
@@ -1796,10 +1848,12 @@ function renderPriceChart(points, meta) {
     poolPriceChart.data.datasets[2].borderColor = inRangeLine;
     poolPriceChart.data.datasets[2].backgroundColor = inRangeFill;
     poolPriceChart.data.datasets[3].data = entryData;
+    poolPriceChart.data.datasets[4].data = stopLossData;
     poolPriceChart.options.scales.y.customLines = {
       low: rangeLow,
       high: rangeHigh,
       entry: entryPrice,
+      stopLoss: stopLossPrice,
       tickRange: lastTickRangeValue,
     };
     poolPriceChart.update();
@@ -2030,9 +2084,23 @@ async function loadActivePosition() {
     }
   }
   if (activeSizeIn1 != null && stopLossPercentValue != null) {
-    const stopLossValue = activeSizeIn1 * (1 - stopLossPercentValue / 100);
-    const stopDiff = activeSizeIn1 - stopLossValue;
-    activeStopLossEl.textContent = `${formatActiveValue(stopLossValue)} ${data.token1Symbol} (${formatActiveValue(stopDiff)} ${data.token1Symbol})`;
+    const info = computeStopLossInfo({
+      baseSize: activeSizeIn1,
+      stopLossPercent: stopLossPercentValue,
+      amount0: lastAmount0,
+      amount1: lastAmount1,
+      price0In1: Number.isFinite(lastPrice0In1) ? lastPrice0In1 : entryPrice,
+      symbol0: data.token0Symbol ?? '',
+      symbol1: data.token1Symbol ?? '',
+    });
+    if (info) {
+      const priceLabel = info.priceLabel ? ` / ${info.priceLabel}` : '';
+      activeStopLossEl.textContent =
+        `${formatActiveValue(info.stopValue)} ${data.token1Symbol} ` +
+        `(${formatActiveValue(info.diff)} ${data.token1Symbol})${priceLabel}`;
+    } else {
+      activeStopLossEl.textContent = '-';
+    }
   } else {
     activeStopLossEl.textContent = '-';
   }
