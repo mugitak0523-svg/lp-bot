@@ -17,8 +17,10 @@ import {
   getLatestPosition,
   listPositions,
   updateActivePositionConfig,
+  updatePositionByTokenId,
   updatePerpCloseDetails,
 } from '../db/positions';
+import type { PositionUpdate } from '../db/positions';
 import { getDb } from '../db/sqlite';
 import { loadSettings } from '../config/settings';
 import { createHttpProvider } from '../utils/provider';
@@ -328,6 +330,83 @@ export function startApiServer(port: number, actions: ApiActions = {}): void {
       })
     );
     res.json(rows);
+  });
+
+  app.post('/positions/update', async (req, res) => {
+    const body = req.body ?? {};
+    const tokenId = typeof body.tokenId === 'string' ? body.tokenId.trim() : '';
+    if (!tokenId) {
+      res.status(400).json({ error: 'tokenId is required' });
+      return;
+    }
+    const updates: PositionUpdate = {};
+    if (body.fees0 === null || typeof body.fees0 === 'string') updates.fees0 = body.fees0;
+    if (body.fees1 === null || typeof body.fees1 === 'string') updates.fees1 = body.fees1;
+    if (body.gasCostNative === null || typeof body.gasCostNative === 'string') {
+      updates.gasCostNative = body.gasCostNative;
+    }
+    if (body.gasCostIn1 === null || typeof body.gasCostIn1 === 'number') updates.gasCostIn1 = body.gasCostIn1;
+    if (body.swapFeeIn1 === null || typeof body.swapFeeIn1 === 'number') updates.swapFeeIn1 = body.swapFeeIn1;
+    if (body.perpRealizedPnlIn1 === null || typeof body.perpRealizedPnlIn1 === 'number') {
+      updates.perpRealizedPnlIn1 = body.perpRealizedPnlIn1;
+    }
+    if (body.perpRealizedFeeIn1 === null || typeof body.perpRealizedFeeIn1 === 'number') {
+      updates.perpRealizedFeeIn1 = body.perpRealizedFeeIn1;
+    }
+    if (body.configTickRange === null || typeof body.configTickRange === 'number') {
+      updates.configTickRange = body.configTickRange;
+    }
+    if (body.configRebalanceDelaySec === null || typeof body.configRebalanceDelaySec === 'number') {
+      updates.configRebalanceDelaySec = body.configRebalanceDelaySec;
+    }
+    if (body.configSlippageBps === null || typeof body.configSlippageBps === 'number') {
+      updates.configSlippageBps = body.configSlippageBps;
+    }
+    if (body.configStopLossPercent === null || typeof body.configStopLossPercent === 'number') {
+      updates.configStopLossPercent = body.configStopLossPercent;
+    }
+    if (body.configMaxGasPriceGwei === null || typeof body.configMaxGasPriceGwei === 'number') {
+      updates.configMaxGasPriceGwei = body.configMaxGasPriceGwei;
+    }
+    if (body.configTargetTotalToken1 === null || typeof body.configTargetTotalToken1 === 'number') {
+      updates.configTargetTotalToken1 = body.configTargetTotalToken1;
+    }
+    if (body.configStopAfterAutoClose === null || typeof body.configStopAfterAutoClose === 'number') {
+      updates.configStopAfterAutoClose = body.configStopAfterAutoClose;
+    } else if (typeof body.configStopAfterAutoClose === 'boolean') {
+      updates.configStopAfterAutoClose = body.configStopAfterAutoClose ? 1 : 0;
+    }
+    if (body.configPerpHedgeOnMint === null || typeof body.configPerpHedgeOnMint === 'number') {
+      updates.configPerpHedgeOnMint = body.configPerpHedgeOnMint;
+    } else if (typeof body.configPerpHedgeOnMint === 'boolean') {
+      updates.configPerpHedgeOnMint = body.configPerpHedgeOnMint ? 1 : 0;
+    }
+    if (body.rebalanceReason === null || typeof body.rebalanceReason === 'string') {
+      updates.rebalanceReason = body.rebalanceReason;
+    }
+    if (body.mintTxHash === null || typeof body.mintTxHash === 'string') updates.mintTxHash = body.mintTxHash;
+    if (body.closeTxHash === null || typeof body.closeTxHash === 'string') updates.closeTxHash = body.closeTxHash;
+    if (body.closeReason === null || typeof body.closeReason === 'string') updates.closeReason = body.closeReason;
+    if (body.closedNetValueIn1 === null || typeof body.closedNetValueIn1 === 'number') {
+      updates.closedNetValueIn1 = body.closedNetValueIn1;
+    }
+    if (body.realizedFeesIn1 === null || typeof body.realizedFeesIn1 === 'number') {
+      updates.realizedFeesIn1 = body.realizedFeesIn1;
+    }
+    if (body.realizedPnlIn1 === null || typeof body.realizedPnlIn1 === 'number') {
+      updates.realizedPnlIn1 = body.realizedPnlIn1;
+    }
+    if (body.closedAt === null || typeof body.closedAt === 'string') updates.closedAt = body.closedAt;
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: 'no valid fields provided' });
+      return;
+    }
+    const changes = await updatePositionByTokenId(db, tokenId, updates);
+    if (!changes) {
+      res.status(404).json({ error: 'position not found' });
+      return;
+    }
+    res.json({ updated: changes });
   });
 
   app.post('/positions/delete', async (req, res) => {
