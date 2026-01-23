@@ -367,6 +367,32 @@ export type PositionConfigUpdate = {
   configPerpHedgeOnMint?: number | null;
 };
 
+export type PositionUpdate = {
+  fees0?: string | null;
+  fees1?: string | null;
+  gasCostNative?: string | null;
+  gasCostIn1?: number | null;
+  swapFeeIn1?: number | null;
+  perpRealizedPnlIn1?: number | null;
+  perpRealizedFeeIn1?: number | null;
+  configTickRange?: number | null;
+  configRebalanceDelaySec?: number | null;
+  configSlippageBps?: number | null;
+  configStopLossPercent?: number | null;
+  configMaxGasPriceGwei?: number | null;
+  configTargetTotalToken1?: number | null;
+  configStopAfterAutoClose?: number | null;
+  configPerpHedgeOnMint?: number | null;
+  rebalanceReason?: string | null;
+  mintTxHash?: string | null;
+  closeTxHash?: string | null;
+  closeReason?: string | null;
+  closedNetValueIn1?: number | null;
+  realizedFeesIn1?: number | null;
+  realizedPnlIn1?: number | null;
+  closedAt?: string | null;
+};
+
 export async function updateActivePositionConfig(
   db: SqliteDb,
   tokenId: string,
@@ -404,4 +430,61 @@ export async function updateActivePositionConfig(
       tokenId,
     ]
   );
+}
+
+export async function updatePositionByTokenId(
+  db: SqliteDb,
+  tokenId: string,
+  updates: PositionUpdate
+): Promise<number> {
+  const fields: Array<[keyof PositionUpdate, string]> = [
+    ['fees0', 'fees0'],
+    ['fees1', 'fees1'],
+    ['gasCostNative', 'gas_cost_native'],
+    ['gasCostIn1', 'gas_cost_in_1'],
+    ['swapFeeIn1', 'swap_fee_in_1'],
+    ['perpRealizedPnlIn1', 'perp_realized_pnl_in_1'],
+    ['perpRealizedFeeIn1', 'perp_realized_fee_in_1'],
+    ['configTickRange', 'config_tick_range'],
+    ['configRebalanceDelaySec', 'config_rebalance_delay_sec'],
+    ['configSlippageBps', 'config_slippage_bps'],
+    ['configStopLossPercent', 'config_stop_loss_percent'],
+    ['configMaxGasPriceGwei', 'config_max_gas_price_gwei'],
+    ['configTargetTotalToken1', 'config_target_total_token1'],
+    ['configStopAfterAutoClose', 'config_stop_after_auto_close'],
+    ['configPerpHedgeOnMint', 'config_perp_hedge_on_mint'],
+    ['rebalanceReason', 'rebalance_reason'],
+    ['mintTxHash', 'mint_tx_hash'],
+    ['closeTxHash', 'close_tx_hash'],
+    ['closeReason', 'close_reason'],
+    ['closedNetValueIn1', 'closed_net_value_in_1'],
+    ['realizedFeesIn1', 'realized_fees_in_1'],
+    ['realizedPnlIn1', 'realized_pnl_in_1'],
+    ['closedAt', 'closed_at'],
+  ];
+  const setClauses: string[] = [];
+  const params: Array<string | number | null> = [];
+  fields.forEach(([key, column]) => {
+    if (updates[key] !== undefined) {
+      setClauses.push(`${column} = ?`);
+      params.push(updates[key] ?? null);
+    }
+  });
+  if (setClauses.length === 0) return 0;
+  const now = new Date().toISOString();
+  params.push(now, tokenId);
+  const result = await run(
+    db,
+    `UPDATE positions
+     SET ${setClauses.join(', ')},
+         updated_at = ?
+     WHERE id = (
+       SELECT id FROM positions
+       WHERE token_id = ?
+       ORDER BY id DESC
+       LIMIT 1
+     )`,
+    params
+  );
+  return result.changes ?? 0;
 }
