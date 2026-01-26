@@ -57,6 +57,7 @@ const historyProfitChartEl = document.getElementById('history-profit-chart');
 const historyTodayChartEl = document.getElementById('history-today-chart');
 const historyTotalProfitEl = document.getElementById('history-total-profit');
 const historyTodayTotalEl = document.getElementById('history-today-total');
+const historyTodaySplitEl = document.getElementById('history-today-split');
 const historyDateEl = document.getElementById('history-date');
 const historyDatePrevEl = document.getElementById('history-date-prev');
 const historyDateNextEl = document.getElementById('history-date-next');
@@ -876,6 +877,12 @@ function computeProfitValue(row) {
   return row.realizedPnlIn1 + row.realizedFeesIn1 + perpPnl - row.gasCostIn1 - swapFee - perpFee;
 }
 
+function computePnlValue(row) {
+  if (row.realizedPnlIn1 == null) return null;
+  const perpPnl = typeof row.perpRealizedPnlIn1 === 'number' ? row.perpRealizedPnlIn1 : 0;
+  return row.realizedPnlIn1 + perpPnl;
+}
+
 function computeInterestLabel(row) {
   const profitValue = computeProfitValue(row);
   if (profitValue == null || row.netValueIn1 == null) return '-';
@@ -973,6 +980,22 @@ function buildProfitTrend(closed) {
   });
 }
 
+function buildDailyProfitSeries(closed) {
+  const dailyMap = new Map();
+  closed.forEach((row) => {
+    if (!row.closedAt) return;
+    const time = new Date(row.closedAt);
+    if (!Number.isFinite(time.getTime())) return;
+    const key = time.toDateString();
+    const profit = computeProfitValue(row);
+    if (profit == null) return;
+    const startOfDay = new Date(time.getFullYear(), time.getMonth(), time.getDate()).getTime();
+    const prev = dailyMap.get(key) ?? { time: startOfDay, profit: 0 };
+    dailyMap.set(key, { time: prev.time, profit: prev.profit + profit });
+  });
+  return Array.from(dailyMap.values()).sort((a, b) => a.time - b.time);
+}
+
 function buildTodayProfit(closed, dateKey) {
   const buckets = Array.from({ length: 24 }, () => 0);
 
@@ -1004,9 +1027,15 @@ function updateHistoryCharts(closed) {
     historyTotalProfitEl.textContent = `Total ${formatSigned(totalProfit, 4)} (Win : ${winRateText} / APR : ${aprText})`;
   }
 
-  const trend = buildProfitTrend(closed);
-  const trendLabels = trend.map((point) => new Date(point.time).toLocaleDateString());
-  const trendValues = trend.map((point) => Number(point.value.toFixed(4)));
+  const dailySeries = buildDailyProfitSeries(closed);
+  const trendLabels = dailySeries.map((point) => new Date(point.time).toLocaleDateString());
+  const dailyValues = dailySeries.map((point) => Number(point.profit.toFixed(4)));
+  const trendValues = [];
+  let runningProfit = 0;
+  dailyValues.forEach((value) => {
+    runningProfit += value;
+    trendValues.push(Number(runningProfit.toFixed(4)));
+  });
 
   const selectedDateKey = getHistoryDateKey();
   const todayBuckets = buildTodayProfit(closed, selectedDateKey);
@@ -1023,6 +1052,11 @@ function updateHistoryCharts(closed) {
       if (!row.closedAt) return false;
       return new Date(row.closedAt).toDateString() === selectedDateKey;
     });
+    const todayProfitValues = todayClosed
+      .map((row) => computeProfitValue(row))
+      .filter((value) => value != null);
+    const todayProfitPlus = todayProfitValues.filter((value) => value > 0).reduce((acc, value) => acc + value, 0);
+    const todayProfitMinus = todayProfitValues.filter((value) => value < 0).reduce((acc, value) => acc + value, 0);
     const aprValue = computeHistoryApr(todayClosed);
     const wins = todayClosed.filter((row) => {
       const profit = computeProfitValue(row);
@@ -1037,23 +1071,37 @@ function updateHistoryCharts(closed) {
       .reduce((acc, value) => acc + value, 0);
     const dyValue = todaySize > 0 ? (todayTotal / todaySize) * 100 : null;
     const dyText = dyValue == null ? '-' : `${formatNumber(dyValue, 2)}%`;
-    historyTodayTotalEl.textContent = `Total ${formatSigned(todayTotal, 4)} (Win : ${winRateText} / APR : ${aprText} / DY : ${dyText})`;
+    historyTodayTotalEl.textContent = `Profit ${formatSigned(todayTotal, 4)} (Win : ${winRateText} / APR : ${aprText} / DY : ${dyText})`;
+    if (historyTodaySplitEl) {
+      historyTodaySplitEl.textContent = `+${formatNumber(todayProfitPlus, 4)} / ${formatNumber(todayProfitMinus, 4)}`;
+    }
+  } else if (historyTodaySplitEl) {
+    historyTodaySplitEl.textContent = '-';
   }
   const hourLabels = Array.from({ length: 24 }, (_, idx) => `${idx}h`);
 
   if (!historyProfitChart) {
     historyProfitChart = new window.Chart(historyProfitChartEl.getContext('2d'), {
-      type: 'line',
+      type: 'bar',
       data: {
         labels: trendLabels,
         datasets: [
           {
+            label: 'Daily Profit',
+            data: dailyValues,
+            backgroundColor: 'rgba(59, 130, 246, 0.45)',
+            borderWidth: 0,
+            yAxisID: 'y',
+          },
+          {
+            type: 'line',
             label: 'Cumulative Profit',
             data: trendValues,
             borderColor: '#f36a2b',
             backgroundColor: 'rgba(243, 106, 43, 0.15)',
             fill: true,
             tension: 0.3,
+            yAxisID: 'y',
           },
         ],
       },
@@ -1068,7 +1116,8 @@ function updateHistoryCharts(closed) {
     });
   } else {
     historyProfitChart.data.labels = trendLabels;
-    historyProfitChart.data.datasets[0].data = trendValues;
+    historyProfitChart.data.datasets[0].data = dailyValues;
+    historyProfitChart.data.datasets[1].data = trendValues;
     historyProfitChart.update();
   }
 
