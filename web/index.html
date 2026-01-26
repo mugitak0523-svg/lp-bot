@@ -201,7 +201,12 @@
             <article class="card chart-card" id="card-chart">
               <div class="chart-header">
                 <h2 class="card-title">Pool Price</h2>
-                <span class="stat-sub" id="chart-profit">-</span>
+                <div class="chart-controls">
+                  <button class="btn ghost toggle active" id="btn-stop-loss-line" type="button" aria-pressed="true">
+                    Stop Loss Line (ON)
+                  </button>
+                  <span class="stat-sub" id="chart-profit">-</span>
+                </div>
               </div>
               <div class="chart-wrap">
                 <canvas id="price-chart" height="200" aria-label="Price chart"></canvas>

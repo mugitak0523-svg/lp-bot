@@ -687,6 +687,12 @@ h1 {
   transform: translateY(-2.5px);
 }
 
+#btn-stop-loss-line {
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
 .icon-btn.small {
   width: 26px;
   height: 26px;
