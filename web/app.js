@@ -899,15 +899,11 @@ function computeInterestLabel(row) {
 }
 
 function setWinRateFromClosed(closed) {
-  let wins = 0;
-  let total = 0;
-  closed.forEach((row) => {
-    const profit = computeProfitValue(row);
-    if (profit == null) return;
-    total += 1;
-    if (profit > 0) wins += 1;
-  });
-  winRateCache = total > 0 ? (wins / total) * 100 : null;
+  const profitValues = closed
+    .map((row) => computeProfitValue(row))
+    .filter((value) => value != null);
+  const wins = profitValues.filter((value) => value > 0).length;
+  winRateCache = profitValues.length > 0 ? (wins / profitValues.length) * 100 : null;
 }
 
 function computeHistoryApr(closed) {
@@ -1058,11 +1054,8 @@ function updateHistoryCharts(closed) {
     const todayProfitPlus = todayProfitValues.filter((value) => value > 0).reduce((acc, value) => acc + value, 0);
     const todayProfitMinus = todayProfitValues.filter((value) => value < 0).reduce((acc, value) => acc + value, 0);
     const aprValue = computeHistoryApr(todayClosed);
-    const wins = todayClosed.filter((row) => {
-      const profit = computeProfitValue(row);
-      return profit != null && profit > 0;
-    }).length;
-    const winRate = todayClosed.length > 0 ? (wins / todayClosed.length) * 100 : null;
+    const wins = todayProfitValues.filter((value) => value > 0).length;
+    const winRate = todayProfitValues.length > 0 ? (wins / todayProfitValues.length) * 100 : null;
     const winRateText = winRate == null ? '-' : `${formatNumber(winRate, 1)}%`;
     const aprText = aprValue == null ? '-' : `${formatNumber(aprValue, 1)}%`;
     const todaySize = todayClosed
