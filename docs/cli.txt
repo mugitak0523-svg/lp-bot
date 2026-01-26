@@ -21,3 +21,19 @@ curl "http://localhost:3000/trades?market=ETH-USD&limit=10"
 curl "http://localhost:3000/perp/trades?limit=20"
 curl "http://localhost:3000/perp/trades?token_id=5223750"
 curl "http://localhost:3000/perp/trades?token_id=5223750&market=ETH-USD&limit=50"
+
+curl -X POST https://lp-bot-production.up.railway.app/config \
+  -H "Content-Type: application/json" \
+  -d '{"stopLossPercent":10}'
+
+  curl -X POST https://lp-bot-production.up.railway.app/config \
+  -H "Content-Type: application/json" \
+  -d '{"rebalanceDelaySec":43200}'
+
+  curl -X POST https://lp-bot-production.up.railway.app/positions/update \
+  -H "Content-Type: application/json" \
+  -d '{"tokenId":"5238706","perpRealizedPnlIn1":-2.57,"perpRealizedFeeIn1":-0.1}'
+
+curl -X POST http://localhost:3002/positions/update \
+  -H "Content-Type: application/json" \
+  -d '{"tokenId":"5235690","perpRealizedPnlIn1":-0.12,"perpRealizedFeeIn1":-0.01}'

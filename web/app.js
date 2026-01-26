@@ -127,6 +127,7 @@ const closeBtn = document.getElementById('btn-close');
 const createBtn = document.getElementById('btn-create');
 const stopAutoCloseBtn = document.getElementById('btn-stop-auto-close');
 const perpHedgeBtn = document.getElementById('btn-perp-hedge');
+const stopLossLineBtn = document.getElementById('btn-stop-loss-line');
 const createHint = document.getElementById('create-hint');
 const navItems = document.querySelectorAll('.nav-item');
 
@@ -167,6 +168,7 @@ let perpHedgeOnMintValue = true;
 let poolPriceCache = null;
 let lastPoolPriceFetchMs = 0;
 let lastLogId = null;
+let lastPricePoints = [];
 let lastFeeTotalIn1 = null;
 let feeDeltaTimeout = null;
 let feePopTimeout = null;
@@ -178,6 +180,7 @@ let perpAskPrice = null;
 let perpAskUpdatedAt = null;
 let perpPricePnlIn1 = null;
 let perpFeeIn1 = null;
+let showStopLossLine = true;
 let perpQuoteSymbol = 'USDC';
 let activeTickLower = null;
 let activeTickUpper = null;
@@ -591,6 +594,13 @@ function setConfigFormDisabled(disabled) {
   configInputs.forEach((input) => {
     input.disabled = disabled;
   });
+}
+
+function updateStopLossLineToggle() {
+  if (!stopLossLineBtn) return;
+  stopLossLineBtn.classList.toggle('active', showStopLossLine);
+  stopLossLineBtn.textContent = showStopLossLine ? 'Stop Loss Line (ON)' : 'Stop Loss Line (OFF)';
+  stopLossLineBtn.setAttribute('aria-pressed', showStopLossLine ? 'true' : 'false');
 }
 
 if (!chartProfitEl && chartCanvas) {
@@ -1569,6 +1579,7 @@ async function loadLogs() {
       })
       .filter((point) => point != null)
       .sort((a, b) => a.time - b.time);
+    lastPricePoints = points;
     // Render pool price chart from log buffer.
     renderPriceChart(points, 'No log data');
     renderFeeChart(feePoints, 'No fee log data');
@@ -1699,18 +1710,9 @@ const rangeTickLabelPlugin = {
 
 function renderPriceChart(points, meta) {
   if (!chartCanvas || !chartMetaEl || typeof window.Chart === 'undefined') return;
-  if (!Array.isArray(points) || points.length < 1) {
-    chartMetaEl.textContent = meta || 'No data';
-    if (poolPriceChart) {
-      poolPriceChart.data.labels = [];
-      poolPriceChart.data.datasets[0].data = [];
-      poolPriceChart.update();
-    }
-    return;
-  }
-
-  const labels = points.map((point) => formatChartTimeShort(point.time));
-  const values = points.map((point) => point.price);
+  const resolvedPoints = Array.isArray(points) ? points : [];
+  const labels = resolvedPoints.map((point) => formatChartTimeShort(point.time));
+  const values = resolvedPoints.map((point) => point.price);
   const rangeLow = Number.isFinite(activeRangePriceLow) ? activeRangePriceLow : null;
   const rangeHigh = Number.isFinite(activeRangePriceHigh) ? activeRangePriceHigh : null;
   const entryPrice = Number.isFinite(activeEntryPrice) ? activeEntryPrice : null;
@@ -1723,7 +1725,8 @@ function renderPriceChart(points, meta) {
     symbol0: lastSymbol0 ?? '',
     symbol1: lastSymbol1 ?? '',
   });
-  const stopLossPrice = Number.isFinite(stopLossInfo?.stopPrice) ? stopLossInfo.stopPrice : null;
+  const stopLossPrice =
+    showStopLossLine && Number.isFinite(stopLossInfo?.stopPrice) ? stopLossInfo.stopPrice : null;
   const rangeLowData = rangeLow != null ? labels.map(() => rangeLow) : [];
   const rangeHighData = rangeHigh != null ? labels.map(() => rangeHigh) : [];
   const entryData = entryPrice != null ? labels.map(() => entryPrice) : [];
@@ -1732,6 +1735,27 @@ function renderPriceChart(points, meta) {
   const inRangeLine = lastOutOfRange ? '#ef4444' : '#84cc16';
   const inRangeFill = lastOutOfRange ? 'rgba(239, 68, 68, 0.08)' : 'rgba(132, 204, 22, 0.08)';
   const priceLine = lastOutOfRange ? '#ef4444' : '#16a34a';
+
+  if (labels.length < 1) {
+    chartMetaEl.textContent = meta || 'No data';
+    if (poolPriceChart) {
+      poolPriceChart.data.labels = [];
+      poolPriceChart.data.datasets[0].data = [];
+      poolPriceChart.data.datasets[1].data = [];
+      poolPriceChart.data.datasets[2].data = [];
+      poolPriceChart.data.datasets[3].data = [];
+      poolPriceChart.data.datasets[4].data = [];
+      poolPriceChart.options.scales.y.customLines = {
+        low: rangeLow,
+        high: rangeHigh,
+        entry: entryPrice,
+        stopLoss: stopLossPrice,
+        tickRange: lastTickRangeValue,
+      };
+      poolPriceChart.update();
+    }
+    return;
+  }
 
   if (!poolPriceChart) {
     poolPriceChart = new window.Chart(chartCanvas.getContext('2d'), {
@@ -1970,6 +1994,7 @@ function renderFeeChart(points, meta) {
 }
 
 async function loadChart() {
+  lastPricePoints = [];
   renderPriceChart([], 'Waiting for log data');
 }
 
@@ -2363,6 +2388,15 @@ if (perpHedgeBtn) {
       body: JSON.stringify({ perpHedgeOnMint: perpHedgeOnMintValue }),
     });
     await loadConfig();
+  });
+}
+
+if (stopLossLineBtn) {
+  updateStopLossLineToggle();
+  stopLossLineBtn.addEventListener('click', () => {
+    showStopLossLine = !showStopLossLine;
+    updateStopLossLineToggle();
+    renderPriceChart(lastPricePoints, lastPricePoints.length ? '' : 'No log data');
   });
 }
 
